@@ -1,0 +1,79 @@
+"use client";
+
+import { motion, useReducedMotion } from "framer-motion";
+import type { BossMode } from "../lib/mini-ceo";
+
+type BossMood = "focused" | "pleased" | "impatient" | "talking";
+
+interface BossCharacterProps {
+  mode: BossMode;
+  mood?: BossMood;
+  speaking?: boolean;
+  compact?: boolean;
+}
+
+export function BossCharacter({
+  mode,
+  mood = "focused",
+  speaking = false,
+  compact = false,
+}: BossCharacterProps) {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <motion.div
+      className={`boss-character boss-${mode} mood-${mood} ${compact ? "boss-compact" : ""}`}
+      aria-label={`Mini CEO character, ${mood}`}
+      role="img"
+      animate={
+        reduceMotion
+          ? undefined
+          : {
+              y: [0, -4, 0],
+              rotate: mood === "impatient" ? [0, -0.8, 0.8, 0] : [0, 0.35, 0],
+            }
+      }
+      transition={{
+        duration: mood === "impatient" ? 1.8 : 4.8,
+        repeat: Infinity,
+        ease: "easeInOut",
+      }}
+    >
+      <div className="boss-shadow" />
+      <div className="boss-body">
+        <div className="boss-lapel boss-lapel-left" />
+        <div className="boss-lapel boss-lapel-right" />
+        <div className="boss-shirt" />
+        <div className="boss-tie">
+          <span />
+        </div>
+        <div className="boss-pin">MC</div>
+      </div>
+      <div className="boss-neck" />
+      <div className="boss-head">
+        <div className="boss-hair">
+          <i />
+          <i />
+          <i />
+        </div>
+        <div className="boss-ear boss-ear-left" />
+        <div className="boss-ear boss-ear-right" />
+        <div className="boss-brow boss-brow-left" />
+        <div className="boss-brow boss-brow-right" />
+        <div className="boss-eye boss-eye-left"><span /></div>
+        <div className="boss-eye boss-eye-right"><span /></div>
+        <div className="boss-nose" />
+        <div className={`boss-mouth ${speaking ? "is-speaking" : ""}`}>
+          <span />
+        </div>
+        <div className="boss-cheek boss-cheek-left" />
+        <div className="boss-cheek boss-cheek-right" />
+      </div>
+      <div className="boss-arm boss-arm-left" />
+      <div className="boss-arm boss-arm-right" />
+      <div className="boss-status-orbit">
+        <span />
+      </div>
+    </motion.div>
+  );
+}
