@@ -56,8 +56,8 @@ export async function generateMetadata(): Promise<Metadata> {
       images: [
         {
           url: `${origin}/og.png`,
-          width: 1731,
-          height: 909,
+          width: 1536,
+          height: 1024,
           alt: "Mini CEO - Your boss in your pocket",
         },
       ],
@@ -77,7 +77,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#f3eee4",
+  themeColor: "#aaa7a1",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

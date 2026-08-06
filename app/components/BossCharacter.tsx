@@ -62,6 +62,7 @@ export function BossCharacter({
         <div className="boss-brow boss-brow-right" />
         <div className="boss-eye boss-eye-left"><span /></div>
         <div className="boss-eye boss-eye-right"><span /></div>
+        <div className="boss-shades" aria-hidden="true"><i /><i /><span /></div>
         <div className="boss-nose" />
         <div className={`boss-mouth ${speaking ? "is-speaking" : ""}`}>
           <span />
@@ -71,6 +72,13 @@ export function BossCharacter({
       </div>
       <div className="boss-arm boss-arm-left" />
       <div className="boss-arm boss-arm-right" />
+      <div className="boss-watch" aria-hidden="true"><span /></div>
+      <div className="boss-mug" aria-hidden="true">
+        <span className="boss-mug-label">mini<br />ceo</span>
+        <i className="boss-mug-handle" />
+        <i className="boss-steam boss-steam-one" />
+        <i className="boss-steam boss-steam-two" />
+      </div>
       <div className="boss-status-orbit">
         <span />
       </div>

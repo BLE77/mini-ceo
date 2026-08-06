@@ -4,8 +4,8 @@
   "description": "A character-first creator operating system for consistent publishing.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f3eee4",
-  "theme_color": "#f3eee4",
+  "background_color": "#aaa7a1",
+  "theme_color": "#aaa7a1",
   "orientation": "portrait-primary",
   "categories": ["productivity", "business", "lifestyle"],
   "icons": [

@@ -171,6 +171,20 @@ function SectionTitle({
   );
 }
 
+function ClassicMacMenuBar({ section }: { section: string }) {
+  return (
+    <div className="mac-menu-bar" aria-label={`Mini CEO, ${section}`}>
+      <span className="mac-system-mark" aria-hidden="true">MC</span>
+      <strong>Mini CEO</strong>
+      <span className="mac-menu-item">File</span>
+      <span className="mac-menu-item">Edit</span>
+      <span className="mac-menu-item">View</span>
+      <span className="mac-menu-item">Boss</span>
+      <span className="mac-menu-section">{section}</span>
+    </div>
+  );
+}
+
 function AppButton({
   children,
   className = "",
@@ -824,10 +838,16 @@ export default function MiniCeoApp() {
 
   return (
     <main className={`app-shell mode-${bossMode}`}>
+      <ClassicMacMenuBar section={COPY[bossMode].title} />
       <div className="desktop-rail">
         <div className="brand-mark"><span>MC</span></div>
-        <p>Mini CEO</p>
-        <small>Your boss in your pocket.</small>
+        <p>MINI CEO</p>
+        <small>small guy. big plans.</small>
+        <ul className="desktop-boss-notes">
+          <li>low tolerance for nonsense</li>
+          <li>coffee powered</li>
+          <li>publishing over planning</li>
+        </ul>
         <div className="desktop-rail-status">
           <span />
           On duty
@@ -836,7 +856,8 @@ export default function MiniCeoApp() {
 
       <section className="phone-app">
         <header className="app-topbar">
-          <div>
+          <span className="mac-window-box" aria-hidden="true"><i /></span>
+          <div className="app-topbar-copy">
             <p className="eyebrow">Week one</p>
             <strong>{state.profile.name ? `${state.profile.name}'s studio` : "Creator studio"}</strong>
           </div>
@@ -1038,7 +1059,9 @@ function Onboarding({
 
   return (
     <main className={`onboarding-shell onboarding-step-${step}`}>
+      <ClassicMacMenuBar section="Setup Assistant" />
       <header className="onboarding-header">
+        <span className="mac-window-box" aria-hidden="true"><i /></span>
         <div className="mini-wordmark"><span>MC</span> Mini CEO</div>
         <div className="onboarding-progress" aria-label={`Onboarding step ${step + 1} of 6`}>
           {Array.from({ length: 6 }).map((_, index) => (
