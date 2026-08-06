@@ -177,6 +177,12 @@ test("ships a complete installable PWA shell", async () => {
     access(new URL("../public/icon-512.png", import.meta.url)),
     access(new URL("../public/sw.js", import.meta.url)),
   ]);
+
+  const serviceWorker = await readFile(
+    new URL("../public/sw.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(serviceWorker, /mini-ceo-shell-v2/);
 });
 
 test("ships every typed Mini CEO expression and action asset", async () => {

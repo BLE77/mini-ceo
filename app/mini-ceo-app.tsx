@@ -1128,6 +1128,7 @@ function Onboarding({
                     key={mode.id}
                     className={`mode-option ${profile.bossMode === mode.id ? "is-selected" : ""}`}
                     onClick={() => updateProfile("bossMode", mode.id)}
+                    aria-pressed={profile.bossMode === mode.id}
                   >
                     <div className="mode-character-mini">
                       <BossCharacter
