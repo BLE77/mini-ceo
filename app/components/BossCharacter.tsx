@@ -56,9 +56,7 @@ export function BossCharacter({
     ? BOSS_ACTION_ASSETS[action]
     : BOSS_EXPRESSION_ASSETS[resolvedExpression];
   const assetKey = action ? `action:${action}` : `expression:${resolvedExpression}`;
-  const [loadedAsset, setLoadedAsset] = useState<string | null>(null);
   const [failedAsset, setFailedAsset] = useState<string | null>(null);
-  const assetReady = loadedAsset === assetKey;
   const assetFailed = failedAsset === assetKey;
   const characterLabel = action
     ? `Mini CEO ${ACTION_LABELS[action]}`
@@ -66,7 +64,7 @@ export function BossCharacter({
 
   return (
     <div
-      className={`boss-character has-asset boss-${mode} mood-${mood} asset-${action ?? resolvedExpression} ${assetReady ? "boss-asset-ready" : ""} ${speaking ? "is-speaking" : ""} ${compact ? "boss-compact" : ""}`}
+      className={`boss-character has-asset boss-${mode} mood-${mood} asset-${action ?? resolvedExpression} ${assetFailed ? "boss-asset-failed" : ""} ${speaking ? "is-speaking" : ""} ${compact ? "boss-compact" : ""}`}
       aria-label={characterLabel}
       role="img"
     >
@@ -88,6 +86,7 @@ export function BossCharacter({
       >
         {!assetFailed && (
           <Image
+            key={assetKey}
             className="boss-character-art"
             src={assetSrc}
             alt=""
@@ -97,55 +96,56 @@ export function BossCharacter({
             draggable={false}
             priority={!compact}
             unoptimized
-            onLoad={() => setLoadedAsset(assetKey)}
             onError={() => setFailedAsset(assetKey)}
           />
         )}
-        <div className="boss-character-fallback" aria-hidden="true">
-          <div className="boss-shadow" />
-          <div className="boss-body">
-            <div className="boss-lapel boss-lapel-left" />
-            <div className="boss-lapel boss-lapel-right" />
-            <div className="boss-shirt" />
-            <div className="boss-tie">
+        {assetFailed && (
+          <div className="boss-character-fallback" aria-hidden="true">
+            <div className="boss-shadow" />
+            <div className="boss-body">
+              <div className="boss-lapel boss-lapel-left" />
+              <div className="boss-lapel boss-lapel-right" />
+              <div className="boss-shirt" />
+              <div className="boss-tie">
+                <span />
+              </div>
+              <div className="boss-pin">MC</div>
+            </div>
+            <div className="boss-neck" />
+            <div className="boss-head">
+              <div className="boss-hair">
+                <i />
+                <i />
+                <i />
+              </div>
+              <div className="boss-ear boss-ear-left" />
+              <div className="boss-ear boss-ear-right" />
+              <div className="boss-brow boss-brow-left" />
+              <div className="boss-brow boss-brow-right" />
+              <div className="boss-eye boss-eye-left"><span /></div>
+              <div className="boss-eye boss-eye-right"><span /></div>
+              <div className="boss-shades" aria-hidden="true"><i /><i /><span /></div>
+              <div className="boss-nose" />
+              <div className={`boss-mouth ${speaking ? "is-speaking" : ""}`}>
+                <span />
+              </div>
+              <div className="boss-cheek boss-cheek-left" />
+              <div className="boss-cheek boss-cheek-right" />
+            </div>
+            <div className="boss-arm boss-arm-left" />
+            <div className="boss-arm boss-arm-right" />
+            <div className="boss-watch" aria-hidden="true"><span /></div>
+            <div className="boss-mug" aria-hidden="true">
+              <span className="boss-mug-label">mini<br />ceo</span>
+              <i className="boss-mug-handle" />
+              <i className="boss-steam boss-steam-one" />
+              <i className="boss-steam boss-steam-two" />
+            </div>
+            <div className="boss-status-orbit">
               <span />
             </div>
-            <div className="boss-pin">MC</div>
           </div>
-          <div className="boss-neck" />
-          <div className="boss-head">
-            <div className="boss-hair">
-              <i />
-              <i />
-              <i />
-            </div>
-            <div className="boss-ear boss-ear-left" />
-            <div className="boss-ear boss-ear-right" />
-            <div className="boss-brow boss-brow-left" />
-            <div className="boss-brow boss-brow-right" />
-            <div className="boss-eye boss-eye-left"><span /></div>
-            <div className="boss-eye boss-eye-right"><span /></div>
-            <div className="boss-shades" aria-hidden="true"><i /><i /><span /></div>
-            <div className="boss-nose" />
-            <div className={`boss-mouth ${speaking ? "is-speaking" : ""}`}>
-              <span />
-            </div>
-            <div className="boss-cheek boss-cheek-left" />
-            <div className="boss-cheek boss-cheek-right" />
-          </div>
-          <div className="boss-arm boss-arm-left" />
-          <div className="boss-arm boss-arm-right" />
-          <div className="boss-watch" aria-hidden="true"><span /></div>
-          <div className="boss-mug" aria-hidden="true">
-            <span className="boss-mug-label">mini<br />ceo</span>
-            <i className="boss-mug-handle" />
-            <i className="boss-steam boss-steam-one" />
-            <i className="boss-steam boss-steam-two" />
-          </div>
-          <div className="boss-status-orbit">
-            <span />
-          </div>
-        </div>
+        )}
       </motion.div>
     </div>
   );

@@ -87,6 +87,17 @@ test("server-renders Mini CEO metadata and branded loading state", async () => {
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
+test("legacy CSS boss is mounted only after a PNG asset error", async () => {
+  const source = await readFile(
+    new URL("../app/components/BossCharacter.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /\{assetFailed\s*&&\s*\(\s*<div className="boss-character-fallback"/);
+  assert.doesNotMatch(source, /boss-asset-ready/);
+  assert.doesNotMatch(source, /onLoad=\{\(\) => setLoadedAsset/);
+});
+
 test("assistant route returns grounded creator help without external configuration", async () => {
   const worker = await getWorker();
   const response = await worker.fetch(

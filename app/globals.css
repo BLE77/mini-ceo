@@ -3890,8 +3890,8 @@ select {
   }
 }
 
-/* Swappable Mini CEO artwork. The original CSS figure remains underneath as a
-   resilient loading/error fallback for offline PWA sessions. */
+/* Swappable Mini CEO artwork. The original CSS figure is only mounted after a
+   confirmed image error, so it cannot flash while the PNG is loading. */
 .boss-character.has-asset {
   isolation: isolate;
 }
@@ -3914,24 +3914,12 @@ select {
   height: 100%;
   object-fit: contain;
   object-position: center;
-  opacity: 0;
   pointer-events: none;
   user-select: none;
-  transition: opacity 120ms linear;
 }
 
 .boss-character-fallback {
   z-index: 1;
-  transition: opacity 120ms linear;
-}
-
-.boss-character.boss-asset-ready .boss-character-art {
-  opacity: 1;
-}
-
-.boss-character.boss-asset-ready .boss-character-fallback {
-  visibility: hidden;
-  opacity: 0;
 }
 
 .boss-character.has-asset.boss-compact {
