@@ -1098,7 +1098,7 @@ function Onboarding({
               </div>
               <div className="welcome-boss">
                 <div className="boss-intro-card">
-                  <BossCharacter mode="serious" mood="focused" speaking={isSpeaking} />
+                  <BossCharacter mode="serious" mood="focused" action="welcome" speaking={isSpeaking} />
                   <button
                     className="voice-preview"
                     onClick={() =>
@@ -1130,7 +1130,12 @@ function Onboarding({
                     onClick={() => updateProfile("bossMode", mode.id)}
                   >
                     <div className="mode-character-mini">
-                      <BossCharacter mode={mode.id} mood={mode.id === "coach" ? "pleased" : mode.id === "unhinged" ? "impatient" : "focused"} compact />
+                      <BossCharacter
+                        mode={mode.id}
+                        mood={mode.id === "coach" ? "pleased" : mode.id === "unhinged" ? "impatient" : "focused"}
+                        expression={mode.id === "coach" ? "approving" : mode.id === "unhinged" ? "impatient" : "focused"}
+                        compact
+                      />
                     </div>
                     <div>
                       <span>{mode.label}</span>
@@ -1435,6 +1440,13 @@ function TodayView({
   const ideaTasks = activeIdea
     ? state.tasks.filter((task) => task.ideaId === activeIdea.id)
     : [];
+  const bossAction = !activeTask
+    ? "complete"
+    : reminder?.urgency === "missed"
+      ? "missedDeadline"
+      : reminder?.urgency === "due"
+        ? "reminder"
+        : "assignment";
 
   return (
     <div className="today-view">
@@ -1452,7 +1464,12 @@ function TodayView({
           </button>
         </div>
         <div className="boss-stage-character">
-          <BossCharacter mode={mode} mood={activeTask ? "focused" : "pleased"} speaking={isSpeaking} />
+          <BossCharacter
+            mode={mode}
+            mood={activeTask ? reminder?.urgency === "missed" ? "impatient" : "focused" : "pleased"}
+            action={bossAction}
+            speaking={isSpeaking}
+          />
         </div>
       </section>
 
@@ -1837,7 +1854,15 @@ function AssistantSheet({
     <motion.div className="sheet-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
       <motion.section className="assistant-sheet" initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 190, damping: 25 }}>
         <header>
-          <div className="assistant-boss-mini"><BossCharacter mode={bossMode} mood="talking" speaking={isSpeaking} compact /></div>
+          <div className="assistant-boss-mini">
+            <BossCharacter
+              mode={bossMode}
+              mood="talking"
+              expression={busy ? "thinking" : isSpeaking ? "surprised" : "approving"}
+              speaking={isSpeaking}
+              compact
+            />
+          </div>
           <div><span>Mini CEO assistant</span><strong>What are we solving?</strong></div>
           {isSpeaking && <button onClick={stopSpeaking} aria-label="Stop voice"><SpeakerSlash size={18} /></button>}
           <button onClick={close} aria-label="Close assistant"><X size={20} /></button>

@@ -32,6 +32,29 @@ async function getStateModel() {
   return stateModelPromise;
 }
 
+let bossAssetsPromise;
+async function getBossAssets() {
+  bossAssetsPromise ??= readFile(
+    new URL("../app/lib/boss-assets.ts", import.meta.url),
+    "utf8",
+  ).then(async (source) => {
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: {
+        module: ts.ModuleKind.ESNext,
+        target: ts.ScriptTarget.ES2022,
+      },
+      reportDiagnostics: true,
+    });
+    const errors = (compiled.diagnostics ?? []).filter(
+      (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
+    );
+    assert.deepEqual(errors, []);
+    const moduleUrl = `data:text/javascript;base64,${Buffer.from(compiled.outputText).toString("base64")}`;
+    return import(moduleUrl);
+  });
+  return bossAssetsPromise;
+}
+
 function bindings() {
   return {
     ASSETS: {
@@ -154,6 +177,31 @@ test("ships a complete installable PWA shell", async () => {
     access(new URL("../public/icon-512.png", import.meta.url)),
     access(new URL("../public/sw.js", import.meta.url)),
   ]);
+});
+
+test("ships every typed Mini CEO expression and action asset", async () => {
+  const manifest = JSON.parse(
+    await readFile(
+      new URL("../public/characters/mini-ceo/manifest.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const { BOSS_ACTION_ASSETS, BOSS_EXPRESSION_ASSETS } = await getBossAssets();
+
+  assert.deepEqual(BOSS_EXPRESSION_ASSETS, manifest.expressions);
+  assert.deepEqual(BOSS_ACTION_ASSETS, manifest.actions);
+
+  for (const assetPath of [
+    ...Object.values(BOSS_EXPRESSION_ASSETS),
+    ...Object.values(BOSS_ACTION_ASSETS),
+  ]) {
+    const image = await readFile(
+      new URL(`../public${assetPath}`, import.meta.url),
+    );
+    assert.deepEqual([...image.subarray(1, 4)], [80, 78, 71]);
+    assert.equal(image.readUInt32BE(16), 512);
+    assert.equal(image.readUInt32BE(20), 512);
+  }
 });
 
 test("state model maintains real streaks and rolls weekly metrics forward", async () => {

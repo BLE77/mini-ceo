@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "format": "transparent PNG",
+  "canvas": "512x512",
+  "expressions": {
+    "focused": "/characters/mini-ceo/expressions/focused.png",
+    "approving": "/characters/mini-ceo/expressions/approving.png",
+    "thinking": "/characters/mini-ceo/expressions/thinking.png",
+    "celebrating": "/characters/mini-ceo/expressions/celebrating.png",
+    "concerned": "/characters/mini-ceo/expressions/concerned.png",
+    "disappointed": "/characters/mini-ceo/expressions/disappointed.png",
+    "impatient": "/characters/mini-ceo/expressions/impatient.png",
+    "surprised": "/characters/mini-ceo/expressions/surprised.png"
+  },
+  "actions": {
+    "welcome": "/characters/mini-ceo/actions/welcome.png",
+    "assignment": "/characters/mini-ceo/actions/assignment.png",
+    "working": "/characters/mini-ceo/actions/working.png",
+    "reminder": "/characters/mini-ceo/actions/reminder.png",
+    "complete": "/characters/mini-ceo/actions/complete.png",
+    "missedDeadline": "/characters/mini-ceo/actions/missed-deadline.png"
+  },
+  "atlases": {
+    "expressions": "/characters/mini-ceo/expressions-atlas.png",
+    "actions": "/characters/mini-ceo/actions-atlas.png"
+  }
+}
+

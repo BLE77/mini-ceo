@@ -3881,3 +3881,62 @@ select {
     animation: none !important;
   }
 }
+
+/* Swappable Mini CEO artwork. The original CSS figure remains underneath as a
+   resilient loading/error fallback for offline PWA sessions. */
+.boss-character.has-asset {
+  isolation: isolate;
+}
+
+.boss-character-art,
+.boss-character-fallback {
+  position: absolute;
+  inset: 0;
+}
+
+.boss-character-art {
+  z-index: 12;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 120ms linear;
+}
+
+.boss-character-fallback {
+  z-index: 1;
+  transition: opacity 120ms linear;
+}
+
+.boss-character.boss-asset-ready > .boss-character-art {
+  opacity: 1;
+}
+
+.boss-character.boss-asset-ready > .boss-character-fallback {
+  visibility: hidden;
+  opacity: 0;
+}
+
+.boss-character.has-asset.boss-compact {
+  width: 250px;
+  height: 310px;
+}
+
+.boss-character.has-asset.is-speaking > .boss-character-art {
+  animation: boss-voice-pulse 560ms ease-in-out infinite alternate;
+  transform-origin: center bottom;
+}
+
+@keyframes boss-voice-pulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.018); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boss-character.has-asset.is-speaking > .boss-character-art {
+    animation: none !important;
+  }
+}
