@@ -180,8 +180,7 @@ function verifySignals(value: unknown, citations: VerifiedSource[]) {
     );
     const key = headline.toLowerCase();
 
-    // A signal needs two actual search citations and at least one non-social source.
-    // X-only chatter can be useful research, but it is not independently verified news.
+    // A signal needs both independently reported news and an actual public X source.
     if (
       !headline ||
       !summary ||
@@ -190,6 +189,7 @@ function verifySignals(value: unknown, citations: VerifiedSource[]) {
       !topic ||
       sources.length < 2 ||
       !sources.some((source) => source.channel === "news") ||
+      !sources.some((source) => source.channel === "x") ||
       seen.has(key)
     ) {
       continue;
@@ -344,7 +344,7 @@ export async function POST(request: Request) {
         {
           role: "system",
           content:
-            "You are the live research desk for Mini CEO. You MUST use the search tool to investigate current news, primary sources, credible reporting, and public X posts before answering. Find concrete developments from the last seven days that can support timely short-form creator coverage. Look for independent confirmation and observable X discussion, but never invent or estimate views, likes, reposts, rankings, or virality. A topic is not viral merely because it is interesting. Use exact URLs returned by search. Return JSON only with this shape: {\"signals\":[{\"headline\":\"factual event\",\"summary\":\"what actually happened\",\"whyNow\":\"date-specific reason it matters now\",\"viralEvidence\":\"observable reporting or X discussion without invented numbers\",\"topic\":\"matching creator topic\",\"sourceUrls\":[\"exact searched URL\",\"exact searched URL\"]}]}. Each signal must cite at least two searched sources, including at least one credible non-social source; seek at least one X post too. If a claim cannot be verified from searched sources, omit it. If there are no verified signals, return {\"signals\":[]}. Do not add markdown or commentary.",
+            "You are the live research desk for Mini CEO. You MUST use the search tool to investigate current news, primary sources, credible reporting, and public X posts before answering. Find concrete developments from the last seven days that can support timely short-form creator coverage. Look for independent confirmation and observable X discussion, but never invent or estimate views, likes, reposts, rankings, or virality. A topic is not viral merely because it is interesting. Use exact URLs returned by search. Return JSON only with this shape: {\"signals\":[{\"headline\":\"factual event\",\"summary\":\"what actually happened\",\"whyNow\":\"date-specific reason it matters now\",\"viralEvidence\":\"observable reporting or X discussion without invented numbers\",\"topic\":\"matching creator topic\",\"sourceUrls\":[\"exact non-social searched URL\",\"exact X post URL\"]}]}. Every signal MUST cite at least two searched sources and sourceUrls MUST include both at least one credible non-social source and at least one public x.com or twitter.com post. If either kind of source is unavailable, omit that signal. If a claim cannot be verified from searched sources, omit it. If there are no verified signals, return {\"signals\":[]}. Do not add markdown or commentary.",
         },
         {
           role: "user",
@@ -383,7 +383,7 @@ export async function POST(request: Request) {
 
   const researchJson = parseModelJson(researchContent);
   const verifiedSignals = verifySignals(researchJson?.signals, citations);
-  if (!verifiedSignals.length || !verifiedSignals.some((signal) => signal.hasXSource)) {
+  if (!verifiedSignals.length) {
     return Response.json(
       {
         error:
