@@ -388,6 +388,11 @@ export async function POST(request: Request) {
       {
         error:
           "No story had enough verified current-news and X evidence to recommend right now. Nothing was fabricated.",
+        researchSummary: {
+          searchedSources: citations.length,
+          xSources: citations.filter((citation) => citation.channel === "x").length,
+          verifiedStories: verifiedSignals.length,
+        },
       },
       { status: 422, headers: { "Cache-Control": "no-store" } },
     );
