@@ -132,10 +132,18 @@ type RecognitionInstance = {
   interimResults: boolean;
   continuous: boolean;
   onresult: ((event: RecognitionResultEvent) => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
+};
+
+type RecordedListeningSession = {
+  recorder: MediaRecorder;
+  stream: MediaStream;
+  chunks: Blob[];
+  timeoutId: number;
+  cancelled: boolean;
 };
 
 type RecognitionConstructor = new () => RecognitionInstance;
@@ -357,6 +365,7 @@ export default function MiniCeoApp() {
   const [cloudReady, setCloudReady] = useState(false);
   const [pushConnection, setPushConnection] = useState<PushConnection>({ status: "checking" });
   const [isListening, setIsListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [voiceConversationActive, setVoiceConversationActive] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<
     NotificationPermission | "unsupported"
@@ -364,6 +373,7 @@ export default function MiniCeoApp() {
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [clock, setClock] = useState(() => new Date());
   const recognitionRef = useRef<RecognitionInstance | null>(null);
+  const recordedListeningRef = useRef<RecordedListeningSession | null>(null);
   const lastReminderKeyRef = useRef("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
@@ -684,7 +694,7 @@ export default function MiniCeoApp() {
           /samantha|ava|daniel|aaron|serena|moira/i.test(voice.name),
       );
       if (preferred) utterance.voice = preferred;
-      utterance.rate = voiceMode === "unhinged" ? 1.08 : voiceMode === "coach" ? 0.94 : 1;
+      utterance.rate = voiceMode === "unhinged" ? 1.25 : voiceMode === "coach" ? 1.05 : 1.12;
       utterance.pitch = voiceMode === "unhinged" ? 1.04 : 0.96;
       utterance.onstart = () => setIsSpeaking(true);
       utterance.onend = () => setIsSpeaking(false);
@@ -1268,8 +1278,110 @@ export default function MiniCeoApp() {
     void sendAssistant(DEMO_KICKOFF_PROMPT, { hideCreator: true });
   }, [assistantOpen, brainConnection.status, hydrated, isDemoMode, sendAssistant, voiceConnection.status]);
 
+  const startRecordedListening = useCallback(async () => {
+    if (
+      isListening ||
+      isTranscribing ||
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder === "undefined"
+    ) {
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+        showToast("This browser cannot open the microphone. Check browser microphone permissions or type to the boss.");
+        setVoiceConversationActive(false);
+      }
+      return;
+    }
+
+    setIsListening(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      const supportedType = [
+        "audio/webm;codecs=opus",
+        "audio/mp4",
+        "audio/webm",
+      ].find((type) => MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(
+        stream,
+        supportedType ? { mimeType: supportedType } : undefined,
+      );
+      const session: RecordedListeningSession = {
+        recorder,
+        stream,
+        chunks: [],
+        timeoutId: 0,
+        cancelled: false,
+      };
+      recordedListeningRef.current = session;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) session.chunks.push(event.data);
+      };
+      recorder.onerror = () => {
+        session.cancelled = true;
+        stream.getTracks().forEach((track) => track.stop());
+        recordedListeningRef.current = null;
+        setIsListening(false);
+        setVoiceConversationActive(false);
+        showToast("The microphone stopped unexpectedly. Check its browser permission and try again.");
+      };
+      recorder.onstop = async () => {
+        window.clearTimeout(session.timeoutId);
+        stream.getTracks().forEach((track) => track.stop());
+        recordedListeningRef.current = null;
+        setIsListening(false);
+        if (session.cancelled) return;
+
+        const audio = new Blob(session.chunks, {
+          type: recorder.mimeType || supportedType || "audio/webm",
+        });
+        if (audio.size < 100) {
+          showToast("I did not hear anything. Tap the microphone and try again.");
+          return;
+        }
+
+        setIsTranscribing(true);
+        try {
+          const form = new FormData();
+          const extension = audio.type.includes("mp4") ? "m4a" : "webm";
+          form.append("audio", audio, `mini-ceo-voice.${extension}`);
+          const response = await fetch("/api/transcribe", { method: "POST", body: form });
+          const data = (await response.json().catch(() => ({}))) as {
+            text?: string;
+            error?: string;
+          };
+          if (!response.ok || !data.text?.trim()) {
+            throw new Error(data.error || "The boss could not transcribe that recording.");
+          }
+          const transcript = data.text.trim();
+          setAssistantInput(transcript);
+          setIsTranscribing(false);
+          await sendAssistant(transcript);
+        } catch (error) {
+          setIsTranscribing(false);
+          setVoiceConversationActive(false);
+          showToast(
+            error instanceof Error
+              ? error.message
+              : "The live transcription service could not hear that.",
+          );
+        }
+      };
+
+      recorder.start(250);
+      session.timeoutId = window.setTimeout(() => {
+        if (recorder.state === "recording") recorder.stop();
+      }, 7_000);
+    } catch {
+      setIsListening(false);
+      setVoiceConversationActive(false);
+      showToast("Microphone permission is blocked. Allow it for Mini CEO, then tap Talk again.");
+    }
+  }, [isListening, isTranscribing, sendAssistant]);
+
   const startListening = useCallback(() => {
-    if (assistantBusy || isListening) return;
+    if (assistantBusy || isListening || isTranscribing) return;
     const browserWindow = window as typeof window & {
       SpeechRecognition?: RecognitionConstructor;
       webkitSpeechRecognition?: RecognitionConstructor;
@@ -1277,8 +1389,7 @@ export default function MiniCeoApp() {
     const Recognition =
       browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition;
     if (!Recognition) {
-      showToast("Voice input is not supported in this browser. You can still type to the boss.");
-      setVoiceConversationActive(false);
+      void startRecordedListening();
       return;
     }
     const recognition = new Recognition();
@@ -1294,9 +1405,8 @@ export default function MiniCeoApp() {
     };
     recognition.onerror = () => {
       setIsListening(false);
-      setVoiceConversationActive(false);
       recognitionRef.current = null;
-      showToast("I could not hear that. Try again or type your request.");
+      void startRecordedListening();
     };
     recognition.onend = () => {
       setIsListening(false);
@@ -1305,12 +1415,21 @@ export default function MiniCeoApp() {
     recognitionRef.current = recognition;
     setIsListening(true);
     recognition.start();
-  }, [assistantBusy, isListening, sendAssistant]);
+  }, [assistantBusy, isListening, isTranscribing, sendAssistant, startRecordedListening]);
 
   const stopListening = useCallback(() => {
     recognitionRef.current?.stop();
     recognitionRef.current = null;
+    const recorded = recordedListeningRef.current;
+    if (recorded) {
+      recorded.cancelled = true;
+      window.clearTimeout(recorded.timeoutId);
+      if (recorded.recorder.state !== "inactive") recorded.recorder.stop();
+      recorded.stream.getTracks().forEach((track) => track.stop());
+      recordedListeningRef.current = null;
+    }
     setIsListening(false);
+    setIsTranscribing(false);
   }, []);
 
   const startVoiceConversation = useCallback(() => {
@@ -1333,7 +1452,8 @@ export default function MiniCeoApp() {
     if (!voiceEnabled) setVoiceEnabled(true);
     setAssistantError(null);
     setVoiceConversationActive(true);
-  }, [brainConnection.status, isDemoMode, voiceConnection.status, voiceEnabled]);
+    startListening();
+  }, [brainConnection.status, isDemoMode, startListening, voiceConnection.status, voiceEnabled]);
 
   const stopVoiceConversation = useCallback(() => {
     setVoiceConversationActive(false);
@@ -1345,6 +1465,7 @@ export default function MiniCeoApp() {
       !voiceConversationActive ||
       !assistantOpen ||
       assistantBusy ||
+      isTranscribing ||
       isSpeaking ||
       isListening
     ) {
@@ -1352,7 +1473,7 @@ export default function MiniCeoApp() {
     }
     const timeout = window.setTimeout(startListening, 420);
     return () => window.clearTimeout(timeout);
-  }, [assistantBusy, assistantOpen, isListening, isSpeaking, startListening, voiceConversationActive]);
+  }, [assistantBusy, assistantOpen, isListening, isSpeaking, isTranscribing, startListening, voiceConversationActive]);
 
   const resetWorkspace = async () => {
     if (isDemoMode) {
@@ -1654,6 +1775,7 @@ export default function MiniCeoApp() {
               setAssistantOpen(false);
             }}
             isListening={isListening}
+            isTranscribing={isTranscribing}
             voiceConversationActive={voiceConversationActive}
             startVoiceConversation={startVoiceConversation}
             stopVoiceConversation={stopVoiceConversation}
@@ -2750,6 +2872,7 @@ function AssistantSheet({
   send,
   close,
   isListening,
+  isTranscribing,
   voiceConversationActive,
   startVoiceConversation,
   stopVoiceConversation,
@@ -2767,6 +2890,7 @@ function AssistantSheet({
   send: (promptOverride?: string) => void;
   close: () => void;
   isListening: boolean;
+  isTranscribing: boolean;
   voiceConversationActive: boolean;
   startVoiceConversation: () => void;
   stopVoiceConversation: () => void;
@@ -2794,7 +2918,7 @@ function AssistantSheet({
     ? "error"
     : isListening
       ? "listening"
-      : busy
+      : busy || isTranscribing
         ? "thinking"
         : checkingConnections
           ? "connecting"
@@ -2837,8 +2961,8 @@ function AssistantSheet({
         </header>
         <div className={`voice-conversation-status ${voiceConversationActive ? "is-active" : ""}`} role="status">
           <span aria-hidden="true" />
-          <strong>{voiceConversationActive ? isListening ? "Listening to you" : isSpeaking ? "ElevenLabs CEO is talking" : busy ? "Live agent is thinking" : "Keeping the mic open" : checkingConnections ? "Checking live services" : liveBrainConnected && liveVoiceConnected ? "Live agent and voice ready" : "Live connections required"}</strong>
-          <small>{voiceConversationActive ? "Speak naturally. The microphone reopens after every ElevenLabs reply." : liveBrainConnected && liveVoiceConnected ? "Tap the microphone to start the real continuous conversation." : "Demo mode never substitutes canned dialogue or a browser voice."}</small>
+          <strong>{voiceConversationActive ? isListening ? "Listening to you" : isTranscribing ? "Transcribing your voice" : isSpeaking ? "ElevenLabs CEO is talking" : busy ? "Live agent is thinking" : "Keeping the mic open" : checkingConnections ? "Checking live services" : liveBrainConnected && liveVoiceConnected ? "Live agent and voice ready" : "Live connections required"}</strong>
+          <small>{voiceConversationActive ? "Speak naturally for up to seven seconds. Mini CEO sends it, answers, then reopens the microphone." : liveBrainConnected && liveVoiceConnected ? "Tap the microphone to start the real continuous conversation." : "Demo mode never substitutes canned dialogue or a browser voice."}</small>
         </div>
         <div className="assistant-suggestions">
           {suggestions.map((suggestion) => (
@@ -2864,8 +2988,8 @@ function AssistantSheet({
           <button type="button" className={voiceConversationActive ? "is-listening" : ""} onClick={voiceConversationActive ? stopVoiceConversation : startVoiceConversation} aria-label={voiceConversationActive ? "End voice conversation" : "Start voice conversation"}>
             {voiceConversationActive ? <Pause size={19} weight="fill" /> : <Microphone size={19} weight="fill" />}
           </button>
-          <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={isListening ? "Listening..." : voiceConversationActive ? "Talk or type your reply" : "Ask about the idea, script, or shoot"} />
-          <button type="submit" disabled={!input.trim() || busy || !liveBrainConnected} aria-label="Send to Mini CEO"><PaperPlaneTilt size={19} weight="fill" /></button>
+          <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={isListening ? "Listening..." : isTranscribing ? "Transcribing..." : voiceConversationActive ? "Talk or type your reply" : "Ask about the idea, script, or shoot"} />
+          <button type="submit" disabled={!input.trim() || busy || isTranscribing || !liveBrainConnected} aria-label="Send to Mini CEO"><PaperPlaneTilt size={19} weight="fill" /></button>
         </form>
         <footer><LockKey size={13} /> Every CEO reply is a live agent response · demo speech uses ElevenLabs only</footer>
       </motion.section>

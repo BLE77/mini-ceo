@@ -1,5 +1,6 @@
 const ELEVENLABS_API_ORIGIN = "https://api.elevenlabs.io";
-const MAX_VOICE_TEXT_LENGTH = 900;
+const MAX_VOICE_TEXT_LENGTH = 360;
+const MAX_VOICE_WORDS = 60;
 
 export type BossMode = "coach" | "serious" | "unhinged";
 
@@ -182,6 +183,7 @@ function voiceSettings(bossMode: BossMode) {
         stability: 0.62,
         similarity_boost: 0.78,
         style: 0.18,
+        speed: 1.06,
         use_speaker_boost: true,
       };
     case "unhinged":
@@ -189,6 +191,7 @@ function voiceSettings(bossMode: BossMode) {
         stability: 0.36,
         similarity_boost: 0.82,
         style: 0.64,
+        speed: 1.2,
         use_speaker_boost: true,
       };
     default:
@@ -196,6 +199,7 @@ function voiceSettings(bossMode: BossMode) {
         stability: 0.52,
         similarity_boost: 0.8,
         style: 0.36,
+        speed: 1.12,
         use_speaker_boost: true,
       };
   }
@@ -206,15 +210,47 @@ export function validateVoiceText(value: unknown) {
     return { ok: false as const, error: "Text is required." };
   }
 
-  const text = value.trim();
+  const normalized = value.trim().replace(/\s+/g, " ");
+  const sentences =
+    normalized.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.slice(0, 3) || [normalized];
+  const words = sentences.join(" ").trim().split(/\s+/).slice(0, MAX_VOICE_WORDS);
+  let text = words.join(" ");
   if (text.length > MAX_VOICE_TEXT_LENGTH) {
-    return {
-      ok: false as const,
-      error: `Text must be ${MAX_VOICE_TEXT_LENGTH} characters or fewer.`,
-    };
+    text = text.slice(0, MAX_VOICE_TEXT_LENGTH).replace(/\s+\S*$/, "").trim();
   }
+  if (text && !/[.!?]$/.test(text)) text += ".";
 
   return { ok: true as const, text };
+}
+
+export async function transcribeElevenLabsAudio(file: File) {
+  const form = new FormData();
+  form.append("file", file, file.name || "mini-ceo-voice.webm");
+  form.append("model_id", "scribe_v2");
+
+  const response = await fetch(`${ELEVENLABS_API_ORIGIN}/v1/speech-to-text`, {
+    method: "POST",
+    headers: { "xi-api-key": apiKey() },
+    body: form,
+    cache: "no-store",
+  }).catch(() => {
+    throw new ElevenLabsServiceError(
+      "provider_unavailable",
+      "ElevenLabs transcription is temporarily unavailable.",
+    );
+  });
+
+  if (!response.ok) throw providerError(response.status);
+  const data = (await response.json().catch(() => null)) as { text?: unknown } | null;
+  const text = typeof data?.text === "string" ? data.text.trim() : "";
+  if (!text) {
+    throw new ElevenLabsServiceError(
+      "audio_unavailable",
+      "ElevenLabs could not hear any speech in that recording.",
+    );
+  }
+
+  return { text: text.slice(0, 6_000), model: "scribe_v2" };
 }
 
 export function parseBossMode(value: unknown): BossMode {

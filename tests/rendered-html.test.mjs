@@ -165,6 +165,29 @@ test("hosted AI, voice, and push credentials remain server-side environment valu
   assert.doesNotMatch(source, /sk-(?:or-)?v?1?-[A-Za-z0-9]{20,}/);
 });
 
+test("live boss conversation is fast, concise, and has a real microphone fallback", async () => {
+  const [assistantSource, voiceSource, transcribeSource, appSource] = await Promise.all([
+    readFile(new URL("../app/api/assistant/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/elevenlabs.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/transcribe/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/mini-ceo-app.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(assistantSource, /exactly one short funny work-focused insult/);
+  assert.match(assistantSource, /55 words total/);
+  assert.match(assistantSource, /max_tokens:\s*180/);
+  assert.match(assistantSource, /compactBossReply/);
+  assert.match(voiceSource, /speed:\s*1\.2/);
+  assert.match(voiceSource, /MAX_VOICE_WORDS\s*=\s*60/);
+  assert.match(voiceSource, /\/v1\/speech-to-text/);
+  assert.match(voiceSource, /scribe_v2/);
+  assert.match(transcribeSource, /transcribeElevenLabsAudio/);
+  assert.match(appSource, /navigator\.mediaDevices\.getUserMedia/);
+  assert.match(appSource, /new MediaRecorder/);
+  assert.match(appSource, /fetch\("\/api\/transcribe"/);
+  assert.match(appSource, /setVoiceConversationActive\(true\);\s*startListening\(\);/);
+});
+
 test("assistant route refuses to simulate creator help without a live provider", async () => {
   const worker = await getWorker();
   const response = await worker.fetch(
