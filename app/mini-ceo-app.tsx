@@ -1274,7 +1274,6 @@ export default function MiniCeoApp() {
       return;
     }
     demoKickoffRequestedRef.current = true;
-    setVoiceConversationActive(true);
     void sendAssistant(DEMO_KICKOFF_PROMPT, { hideCreator: true });
   }, [assistantOpen, brainConnection.status, hydrated, isDemoMode, sendAssistant, voiceConnection.status]);
 
@@ -1382,6 +1381,10 @@ export default function MiniCeoApp() {
 
   const startListening = useCallback(() => {
     if (assistantBusy || isListening || isTranscribing) return;
+    if (navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined") {
+      void startRecordedListening();
+      return;
+    }
     const browserWindow = window as typeof window & {
       SpeechRecognition?: RecognitionConstructor;
       webkitSpeechRecognition?: RecognitionConstructor;
@@ -1414,7 +1417,14 @@ export default function MiniCeoApp() {
     };
     recognitionRef.current = recognition;
     setIsListening(true);
-    recognition.start();
+    try {
+      recognition.start();
+    } catch {
+      setIsListening(false);
+      recognitionRef.current = null;
+      setVoiceConversationActive(false);
+      showToast("Microphone permission is blocked. Allow it for Mini CEO, then tap Talk again.");
+    }
   }, [assistantBusy, isListening, isTranscribing, sendAssistant, startRecordedListening]);
 
   const stopListening = useCallback(() => {
