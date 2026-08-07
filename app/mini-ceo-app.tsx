@@ -1381,7 +1381,10 @@ export default function MiniCeoApp() {
 
   const startListening = useCallback(() => {
     if (assistantBusy || isListening || isTranscribing) return;
-    if (navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined") {
+    if (
+      typeof navigator.mediaDevices?.getUserMedia === "function" &&
+      typeof MediaRecorder !== "undefined"
+    ) {
       void startRecordedListening();
       return;
     }
