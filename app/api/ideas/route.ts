@@ -371,10 +371,10 @@ export async function POST(request: Request) {
 
   const researchMessage = researchResult?.choices?.[0]?.message;
   const researchContent = researchMessage?.content;
-  const searchRequests = Number(
-    researchResult?.usage?.server_tool_use?.web_search_requests || 0,
-  );
-  if (!researchResult || typeof researchContent !== "string" || searchRequests < 1) {
+  const citations = extractCitations(researchMessage?.annotations);
+  // Some native providers omit the optional usage counter. Standardized URL
+  // annotations are stronger proof that live search actually returned sources.
+  if (!researchResult || typeof researchContent !== "string" || citations.length < 2) {
     return Response.json(
       {
         error:
@@ -384,7 +384,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const citations = extractCitations(researchMessage?.annotations);
   const researchJson = parseModelJson(researchContent);
   const verifiedSignals = verifySignals(researchJson?.signals, citations);
   if (!verifiedSignals.length || !verifiedSignals.some((signal) => signal.hasXSource)) {
