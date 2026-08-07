@@ -329,14 +329,11 @@ export async function POST(request: Request) {
     payload: {
       temperature: 0.1,
       max_tokens: 3_800,
-      max_tool_calls: 6,
-      tools: [
+      plugins: [
         {
-          type: "openrouter:web_search",
-          parameters: {
-            engine: "native",
-            max_total_results: 24,
-          },
+          id: "web",
+          engine: "native",
+          max_results: 10,
         },
       ],
       x_search_filter: {
