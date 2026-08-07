@@ -115,7 +115,12 @@ function safeHttpUrl(value: unknown) {
 function sourceKey(value: string) {
   try {
     const url = new URL(value);
-    return `${url.hostname.toLowerCase().replace(/^www\./, "")}${url.pathname.replace(/\/$/, "")}`;
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (hostname === "x.com" || hostname === "twitter.com") {
+      const statusId = url.pathname.match(/\/status\/(\d+)/)?.[1];
+      return statusId ? `x.com/status/${statusId}` : `x.com${url.pathname.replace(/\/$/, "")}`;
+    }
+    return `${hostname}${url.pathname.replace(/\/$/, "")}`;
   } catch {
     return "";
   }
