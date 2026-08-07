@@ -145,7 +145,7 @@ export interface MiniCeoState {
 }
 
 export const STORAGE_KEY = "mini-ceo-state-v1";
-export const DEMO_STORAGE_KEY = "mini-ceo-demo-state-v2";
+export const DEMO_STORAGE_KEY = "mini-ceo-demo-state-v3";
 export const DEMO_MISSED_DAYS = 3;
 export const MAX_PRIVATE_FILE_BYTES = 100 * 1024 * 1024;
 export const DAYS = [
@@ -239,6 +239,9 @@ export function createDemoState(now = new Date()): MiniCeoState {
   const monday = localDateKey(weekStart);
   const tuesday = localDateKey(addDays(weekStart, 1));
   const wednesday = localDateKey(addDays(weekStart, 2));
+  const tomorrow = localDateKey(addDays(now, 1));
+  const twoDaysFromNow = localDateKey(addDays(now, 2));
+  const threeDaysFromNow = localDateKey(addDays(now, 3));
   const missedDue = new Date(now.getTime() - DEMO_MISSED_DAYS * 24 * 60 * 60 * 1000);
   const missedDate = localDateKey(missedDue);
   const missedTime = `${String(missedDue.getHours()).padStart(2, "0")}:${String(missedDue.getMinutes()).padStart(2, "0")}`;
@@ -276,6 +279,13 @@ export function createDemoState(now = new Date()): MiniCeoState {
       hook: "This robot says it can find and scoop dog poop before you step in it. I gave it one disgusting afternoon.",
       angle: "Test the product in a real yard, show every miss, and decide whether the AI is useful or just an expensive rolling trash can.",
       topic: "weird AI products",
+      fitReason: "It is the strongest visual product test in the backlog and the full production pipeline is already complete.",
+      verificationNote: "Demo product-test data only. Any product claims still require source verification before a real publish.",
+      provenance: {
+        kind: "ai-original",
+        label: "Demo production slate",
+        detail: "Seeded presentation data for the live Mini CEO rehearsal.",
+      },
       source: "boss",
       status: "approved",
       skillId: "demo_skill_breakdown",
@@ -286,6 +296,13 @@ export function createDemoState(now = new Date()): MiniCeoState {
       hook: "Your content calendar is not the problem. The number of decisions inside it is.",
       angle: "Demonstrate a weekly batching system that turns five open-ended projects into one clear next action.",
       topic: "creator systems",
+      fitReason: "This provides a useful systems story between the stranger AI product tests.",
+      verificationNote: "The before-and-after result is demo data and must be replaced with the creator's real workflow evidence.",
+      provenance: {
+        kind: "creator-input",
+        label: "Demo creator pitch",
+        detail: "Seeded presentation data representing an idea submitted by the creator.",
+      },
       source: "creator",
       status: "approved",
       skillId: "demo_skill_system",
@@ -296,8 +313,15 @@ export function createDemoState(now = new Date()): MiniCeoState {
       hook: "I deleted eleven AI subscriptions. These three earned their spot.",
       angle: "Use a fast evidence-led ranking based on time saved, output quality, and how often each tool gets used.",
       topic: "AI tools",
+      fitReason: "It extends the tested-product format, has a clear scorecard, and can reuse existing screen recordings and subscription receipts.",
+      verificationNote: "Next approved demo idea. Confirm the eleven subscriptions, usage receipts, and all three tool results before scripting.",
+      provenance: {
+        kind: "ai-original",
+        label: "Demo next-up queue",
+        detail: "Seeded as the next approved idea after the overdue dog pooper scooper publish.",
+      },
       source: "boss",
-      status: "suggested",
+      status: "approved",
       skillId: "demo_skill_breakdown",
     },
     {
@@ -306,6 +330,13 @@ export function createDemoState(now = new Date()): MiniCeoState {
       hook: "The information is good. Your first sentence is making it invisible.",
       angle: "Rewrite three weak educational openings into specific, tension-driven hooks without adding clickbait.",
       topic: "content strategy",
+      fitReason: "It turns Mini CEO's hook coaching into a concrete before-and-after lesson.",
+      verificationNote: "Choose three creator-owned examples before production; no performance result is assumed.",
+      provenance: {
+        kind: "ai-original",
+        label: "Demo idea backlog",
+        detail: "Seeded candidate awaiting creator approval.",
+      },
       source: "boss",
       status: "suggested",
       skillId: "demo_skill_system",
@@ -316,6 +347,64 @@ export function createDemoState(now = new Date()): MiniCeoState {
       hook: "You probably have a month of content hiding in one unfinished note.",
       angle: "Transform a real pile of fragments into a hook, proof sequence, shot list, and publishable short.",
       topic: "creator systems",
+      fitReason: "It is a low-production follow-up that can be shot at a desk after the tool ranking.",
+      verificationNote: "Use an actual creator-owned note and remove private information before filming.",
+      provenance: {
+        kind: "ai-original",
+        label: "Demo idea backlog",
+        detail: "Seeded candidate awaiting creator approval.",
+      },
+      source: "boss",
+      status: "suggested",
+      skillId: "demo_skill_system",
+    },
+    {
+      id: "demo_idea_bird_feeder",
+      title: "I let an AI bird feeder identify every backyard visitor",
+      hook: "This feeder claims it can recognize the birds eating for free in my yard. I checked every confident guess.",
+      angle: "Run a visual identification test, compare the app result with a reliable bird guide, and score accuracy without trusting the product label.",
+      topic: "weird AI products",
+      fitReason: "The backyard setup reuses the strongest visual language from the dog pooper scooper test.",
+      verificationNote: "Confirm the specific product, identification feature, privacy behavior, and every species result before scripting.",
+      provenance: {
+        kind: "ai-original",
+        label: "Demo idea backlog",
+        detail: "Seeded product-test candidate awaiting creator approval and research.",
+      },
+      source: "boss",
+      status: "suggested",
+      skillId: "demo_skill_breakdown",
+    },
+    {
+      id: "demo_idea_snack_guard",
+      title: "Can an AI camera stop my dog from stealing food?",
+      hook: "I gave an AI camera one job: catch the thief before the sandwich disappeared.",
+      angle: "Stage a controlled detection test, show false alarms and misses, then judge whether the alert arrives in time to matter.",
+      topic: "weird AI products",
+      fitReason: "It has an immediate visual conflict, a measurable pass-or-fail test, and a funny animal payoff.",
+      verificationNote: "Research the selected camera's real detection and notification features before designing the test.",
+      provenance: {
+        kind: "ai-original",
+        label: "Demo idea backlog",
+        detail: "Seeded product-test candidate awaiting creator approval and research.",
+      },
+      source: "boss",
+      status: "suggested",
+      skillId: "demo_skill_breakdown",
+    },
+    {
+      id: "demo_idea_meeting_bot",
+      title: "I gave an AI meeting bot my entire creator week",
+      hook: "The bot promised to remember every decision. By Friday, I checked what it invented, forgot, and actually saved.",
+      angle: "Compare the meeting record with the real task list and score capture, accuracy, privacy friction, and useful follow-through.",
+      topic: "AI tools",
+      fitReason: "It connects AI tool testing to the creator-systems topic without needing another physical product shoot.",
+      verificationNote: "Use consented demo meetings, verify all summaries against the source notes, and review the selected tool's retention settings.",
+      provenance: {
+        kind: "ai-original",
+        label: "Demo idea backlog",
+        detail: "Seeded workflow-test candidate awaiting creator approval and research.",
+      },
       source: "boss",
       status: "suggested",
       skillId: "demo_skill_system",
@@ -371,6 +460,12 @@ export function createDemoState(now = new Date()): MiniCeoState {
       value: "https://example.com/mini-ceo-demo-publish",
       createdAt: completedAt,
     }),
+    task("demo_stack_research", "demo_idea_stack", "research", "Verify the three-tool scorecard", "Collect the usage receipts, one real output, and one failure case for each of the three surviving AI tools.", tomorrow, "09:30", 30, "queued"),
+    task("demo_stack_script", "demo_idea_stack", "script", "Write the AI tool ranking", "Open with the eleven canceled subscriptions, explain the scorecard, and give each surviving tool one evidence-led verdict.", tomorrow, "11:00", 35, "queued"),
+    task("demo_stack_production", "demo_idea_stack", "production", "Prepare the tool-test screen recordings", "Gather clean product screens, receipt closeups, scorecard graphics, and the deletion montage.", twoDaysFromNow, "09:30", 20, "queued"),
+    task("demo_stack_shoot", "demo_idea_stack", "shoot", "Shoot the three-tool verdict", "Record the hook, ranking transitions, and one concise verdict for each tool.", twoDaysFromNow, "11:00", 40, "queued"),
+    task("demo_stack_edit", "demo_idea_stack", "edit", "Edit the AI tool ranking", "Keep the scorecard visible, label every test, and remove any claim that lacks a receipt or captured result.", threeDaysFromNow, "10:00", 50, "queued"),
+    task("demo_stack_publish", "demo_idea_stack", "publish", "Publish the three AI tools ranking", "Post the verified cut to TikTok, Instagram Reels, and YouTube Shorts, then record the public link.", threeDaysFromNow, "16:30", 10, "queued"),
   ];
 
   return {
@@ -401,6 +496,13 @@ export function createDemoState(now = new Date()): MiniCeoState {
         sourceType: "video",
         sourceValue: "demo-creator-workflow.mp4",
         createdAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: "demo_reference_scorecard",
+        label: "AI tool workflow scorecard and receipts",
+        sourceType: "link",
+        sourceValue: "https://example.com/reference/ai-tool-scorecard",
+        createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
       },
     ],
     skills,

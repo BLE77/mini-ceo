@@ -633,6 +633,57 @@ export default function MiniCeoApp() {
     () => state.tasks.filter((task) => task.ideaId === activeIdea?.id),
     [activeIdea?.id, state.tasks],
   );
+  const assistantIdeaBacklog = useMemo(
+    () =>
+      state.ideas
+        .filter((idea) => idea.status !== "rejected")
+        .map((idea, originalIndex) => {
+          const ideaTasks = state.tasks.filter((task) => task.ideaId === idea.id);
+          const nextTask = ideaTasks
+            .filter((task) => task.status === "active" || task.status === "queued")
+            .sort((left, right) => new Date(left.dueAt).getTime() - new Date(right.dueAt).getTime())[0];
+          const current = idea.id === activeIdea?.id;
+          const priority = current
+            ? 0
+            : idea.status === "approved" && nextTask
+              ? 1
+              : idea.status === "approved"
+                ? 2
+                : 3;
+          return {
+            title: idea.title,
+            hook: idea.hook,
+            angle: idea.angle,
+            topic: idea.topic,
+            status: idea.status,
+            fitReason: idea.fitReason,
+            verificationNote: idea.verificationNote,
+            current,
+            completedTasks: ideaTasks.filter((task) => task.status === "done").length,
+            totalTasks: ideaTasks.length,
+            nextTask: nextTask
+              ? {
+                  title: nextTask.title,
+                  stage: nextTask.stage,
+                  scheduledDate: nextTask.scheduledDate,
+                  dueAt: nextTask.dueAt,
+                  status: nextTask.status,
+                }
+              : undefined,
+            priority,
+            originalIndex,
+          };
+        })
+        .sort(
+          (left, right) =>
+            left.priority - right.priority ||
+            (left.nextTask && right.nextTask
+              ? new Date(left.nextTask.dueAt).getTime() - new Date(right.nextTask.dueAt).getTime()
+              : 0) ||
+            left.originalIndex - right.originalIndex,
+        ),
+    [activeIdea?.id, state.ideas, state.tasks],
+  );
   const taskProgress = progressForTasks(activeIdeaTasks);
   const bossMode = state.profile.bossMode;
   const reminder = useMemo(
@@ -1205,6 +1256,7 @@ export default function MiniCeoApp() {
                   : undefined,
               task: activeTask,
               idea: activeIdea,
+              ideas: assistantIdeaBacklog,
               skill: state.skills[0],
               references: state.references.slice(-3).map((reference) => ({
                 name: reference.label,
@@ -1257,7 +1309,7 @@ export default function MiniCeoApp() {
       } finally {
         setAssistantBusy(false);
       }
-    }, [activeIdea, activeTask, assistantBusy, assistantInput, bossMode, isDemoMode, messages, speak, state.profile.goal, state.profile.topics, state.references, state.skills],
+    }, [activeIdea, activeTask, assistantBusy, assistantIdeaBacklog, assistantInput, bossMode, isDemoMode, messages, speak, state.profile.goal, state.profile.topics, state.references, state.skills],
   );
 
   useEffect(() => {
@@ -2921,7 +2973,7 @@ function AssistantSheet({
   const checkingConnections =
     brainConnection.status === "checking" || voiceConnection.status === "checking";
   const suggestions = unhinged
-    ? ["What task should I do today?", "Why am I three days late?", "Give me the fastest way to publish"]
+    ? ["What task should I do today?", "What's the next idea?", "Why am I three days late?"]
     : ["Give me three stronger hooks", "Turn this into bullet points", "What props do I need?"];
   const latestBossMessage = useMemo(
     () => [...messages].reverse().find((message) => message.role === "boss")?.text,

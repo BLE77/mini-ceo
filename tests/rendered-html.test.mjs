@@ -251,6 +251,20 @@ test("demo assistant never substitutes canned dialogue for a live agent", async 
   assert.equal(body.reply, undefined);
 });
 
+test("live assistant receives an ordered idea pipeline for next-idea questions", async () => {
+  const [appSource, assistantSource] = await Promise.all([
+    readFile(new URL("../app/mini-ceo-app.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/assistant/route.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(appSource, /const assistantIdeaBacklog = useMemo/);
+  assert.match(appSource, /ideas: assistantIdeaBacklog/);
+  assert.match(appSource, /What's the next idea\?/);
+  assert.match(assistantSource, /ideaBacklog: context\.ideas/);
+  assert.match(assistantSource, /prefer an approved item with the earliest queued nextTask/);
+  assert.match(assistantSource, /If no non-current approved item exists/);
+});
+
 test("idea route refuses to substitute templates without the live model", async () => {
   const worker = await getWorker();
   const response = await worker.fetch(
@@ -474,7 +488,8 @@ test("demo mode seeds a complete isolated presentation story", async () => {
   assert.equal(demo.publishedThisWeek, 1);
   assert.equal(demo.streak, 0);
   assert.equal(demo.skills.length, 2);
-  assert.equal(demo.ideas.length, 5);
+  assert.equal(demo.references.length, 3);
+  assert.equal(demo.ideas.length, 8);
   assert.equal(demo.tasks.filter((task) => task.status === "active").length, 1);
   assert.match(
     demo.tasks.find((task) => task.status === "active").title,
@@ -486,6 +501,15 @@ test("demo mode seeds a complete isolated presentation story", async () => {
     3 * 24 * 60 * 60 * 1000,
   );
   assert.ok(demo.tasks.filter((task) => task.status === "done").length >= 7);
+  const nextIdea = demo.ideas.find((idea) => idea.id === "demo_idea_stack");
+  assert.equal(nextIdea.status, "approved");
+  assert.match(nextIdea.fitReason, /scorecard/i);
+  assert.match(nextIdea.verificationNote, /Next approved demo idea/i);
+  const nextIdeaTasks = demo.tasks.filter((task) => task.ideaId === nextIdea.id);
+  assert.equal(nextIdeaTasks.length, 6);
+  assert.equal(nextIdeaTasks.every((task) => task.status === "queued"), true);
+  assert.equal(nextIdeaTasks[0].stage, "research");
+  assert.match(nextIdeaTasks[0].title, /scorecard/i);
   assert.ok(demo.achievements.some((achievement) => achievement.title === "First publish"));
   assert.equal(demo.editorProjects.length, 1);
   assert.equal(demo.editorProjects[0].status, "delivered");
