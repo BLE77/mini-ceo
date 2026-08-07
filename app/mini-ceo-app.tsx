@@ -171,16 +171,45 @@ function SectionTitle({
   );
 }
 
-function ClassicMacMenuBar({ section }: { section: string }) {
+type MacMenuCommand = {
+  label: string;
+  onClick: () => void;
+  active?: boolean;
+};
+
+function ClassicMacMenuBar({
+  section,
+  commands,
+  onBrand,
+  sectionAction,
+}: {
+  section: string;
+  commands: MacMenuCommand[];
+  onBrand: () => void;
+  sectionAction?: () => void;
+}) {
   return (
     <div className="mac-menu-bar" aria-label={`Mini CEO, ${section}`}>
       <span className="mac-system-mark" aria-hidden="true">MC</span>
-      <strong>Mini CEO</strong>
-      <span className="mac-menu-item">File</span>
-      <span className="mac-menu-item">Edit</span>
-      <span className="mac-menu-item">View</span>
-      <span className="mac-menu-item">Boss</span>
-      <span className="mac-menu-section">{section}</span>
+      <button type="button" className="mac-brand-command" onClick={onBrand}>Mini CEO</button>
+      {commands.map((command) => (
+        <button
+          type="button"
+          key={command.label}
+          className={`mac-menu-command ${command.active ? "is-active" : ""}`}
+          onClick={command.onClick}
+          aria-current={command.active ? "page" : undefined}
+        >
+          {command.label}
+        </button>
+      ))}
+      {sectionAction ? (
+        <button type="button" className="mac-menu-section mac-menu-section-button" onClick={sectionAction}>
+          {section}
+        </button>
+      ) : (
+        <span className="mac-menu-section">{section}</span>
+      )}
     </div>
   );
 }
@@ -801,6 +830,20 @@ export default function MiniCeoApp() {
     );
   };
 
+  const exportWorkspace = () => {
+    const payload = JSON.stringify(state, null, 2);
+    const blob = new Blob([payload], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `mini-ceo-workspace-${localDateKey()}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    showToast("Workspace backup downloaded. Private uploaded files stay on this device.");
+  };
+
   if (!hydrated) {
     return (
       <main className="loading-shell" aria-busy="true">
@@ -838,7 +881,17 @@ export default function MiniCeoApp() {
 
   return (
     <main className={`app-shell mode-${bossMode}`}>
-      <ClassicMacMenuBar section={COPY[bossMode].title} />
+      <ClassicMacMenuBar
+        section="Connections"
+        onBrand={() => setView("today")}
+        sectionAction={() => setView("connections")}
+        commands={[
+          { label: "Today", onClick: () => setView("today"), active: view === "today" },
+          { label: "Ideas", onClick: () => setView("ideas"), active: view === "ideas" },
+          { label: "Plan", onClick: () => setView("schedule"), active: view === "schedule" },
+          { label: "Boss", onClick: () => setAssistantOpen(true), active: assistantOpen },
+        ]}
+      />
       <div className="desktop-rail">
         <div className="brand-mark"><span>MC</span></div>
         <p>MINI CEO</p>
@@ -927,6 +980,18 @@ export default function MiniCeoApp() {
                 setVoiceEnabled={setVoiceEnabled}
                 installApp={installApp}
                 resetWorkspace={resetWorkspace}
+                openConnections={() => setView("connections")}
+              />
+            )}
+            {view === "connections" && (
+              <ConnectionsView
+                notificationPermission={notificationPermission}
+                requestNotifications={requestNotifications}
+                installApp={installApp}
+                openAssistant={() => setAssistantOpen(true)}
+                testVoice={() => speak("Mini CEO voice check. I am on duty, and your next assignment is waiting.")}
+                voiceEnabled={voiceEnabled}
+                exportWorkspace={exportWorkspace}
               />
             )}
           </motion.div>
@@ -1059,7 +1124,16 @@ function Onboarding({
 
   return (
     <main className={`onboarding-shell onboarding-step-${step}`}>
-      <ClassicMacMenuBar section="Setup Assistant" />
+      <ClassicMacMenuBar
+        section={`Setup ${step + 1} of 6`}
+        onBrand={() => setStep(0)}
+        commands={[
+          { label: "Welcome", onClick: () => setStep(0), active: step === 0 },
+          { label: "Boss", onClick: () => setStep(1), active: step === 1 },
+          { label: "Goal", onClick: () => setStep(2), active: step === 2 },
+          { label: "Schedule", onClick: () => setStep(3), active: step === 3 },
+        ]}
+      />
       <header className="onboarding-header">
         <span className="mac-window-box" aria-hidden="true"><i /></span>
         <div className="mini-wordmark"><span>MC</span> Mini CEO</div>
@@ -1739,6 +1813,7 @@ function ReviewView({
   setVoiceEnabled,
   installApp,
   resetWorkspace,
+  openConnections,
 }: {
   state: MiniCeoState;
   updateProfile: <K extends keyof MiniCeoState["profile"]>(key: K, value: MiniCeoState["profile"][K]) => void;
@@ -1748,6 +1823,7 @@ function ReviewView({
   setVoiceEnabled: (value: boolean) => void;
   installApp: () => void;
   resetWorkspace: () => void;
+  openConnections: () => void;
 }) {
   const grade = gradeForScore(state.weeklyScore);
   const completed = state.tasks.filter((task) => task.status === "done").length;
@@ -1817,9 +1893,140 @@ function ReviewView({
           <div><UploadSimple size={19} /><span><strong>Add to Home Screen</strong><small>Install Mini CEO like an iPhone app.</small></span></div>
           <CaretRight size={18} />
         </button>
+        <button className="setting-row" onClick={openConnections}>
+          <div><LinkSimple size={19} /><span><strong>Connections</strong><small>See exactly what is live, local, or not connected.</small></span></div>
+          <CaretRight size={18} />
+        </button>
       </section>
 
       <button className="reset-link" onClick={resetWorkspace}>Reset demo workspace</button>
+    </div>
+  );
+}
+
+function ConnectionsView({
+  notificationPermission,
+  requestNotifications,
+  installApp,
+  openAssistant,
+  testVoice,
+  voiceEnabled,
+  exportWorkspace,
+}: {
+  notificationPermission: NotificationPermission | "unsupported";
+  requestNotifications: () => void;
+  installApp: () => void;
+  openAssistant: () => void;
+  testVoice: () => void;
+  voiceEnabled: boolean;
+  exportWorkspace: () => void;
+}) {
+  const notificationActive = notificationPermission === "granted";
+  const voiceAvailable = typeof window !== "undefined" && "speechSynthesis" in window;
+
+  return (
+    <div className="standard-view connections-view">
+      <SectionTitle eyebrow="No pretend integrations" title="What is actually connected" />
+      <p className="connections-intro">
+        A green status means the feature works now. A blue status means it works only on this device.
+        Anything marked not connected has no hidden button or simulated data behind it.
+      </p>
+
+      <section className="connection-group" aria-labelledby="working-now-title">
+        <div className="connection-group-heading">
+          <div>
+            <p className="eyebrow">Working now</p>
+            <h3 id="working-now-title">Real device features</h3>
+          </div>
+          <span className="connection-summary">4 available</span>
+        </div>
+
+        <div className="connection-list">
+          <article className="connection-row">
+            <div className="connection-icon"><LockKey size={20} /></div>
+            <div className="connection-copy">
+              <div><h4>Creator workspace</h4><span className="connection-badge is-device">On this device</span></div>
+              <p>Goals, ideas, tasks, streaks, and settings are saved in this browser. There is no account or cloud sync yet.</p>
+            </div>
+            <AppButton variant="secondary" onClick={exportWorkspace}>Export backup</AppButton>
+          </article>
+
+          <article className="connection-row">
+            <div className="connection-icon"><Brain size={20} /></div>
+            <div className="connection-copy">
+              <div><h4>Mini CEO assistant</h4><span className="connection-badge is-live">Active</span></div>
+              <p>The local assistant can create hooks, scripts, outlines, research plans, checklists, and next steps from your workspace.</p>
+            </div>
+            <AppButton variant="secondary" onClick={openAssistant}>Open boss</AppButton>
+          </article>
+
+          <article className="connection-row">
+            <div className="connection-icon">{voiceEnabled ? <SpeakerHigh size={20} /> : <SpeakerSlash size={20} />}</div>
+            <div className="connection-copy">
+              <div><h4>Device voice</h4><span className={`connection-badge ${voiceAvailable && voiceEnabled ? "is-live" : "is-off"}`}>{voiceAvailable && voiceEnabled ? "Active" : "Unavailable"}</span></div>
+              <p>Speech uses the voices already installed on this phone or computer. This is not a hosted character voice.</p>
+            </div>
+            <AppButton variant="secondary" onClick={testVoice} disabled={!voiceAvailable || !voiceEnabled}>Test voice</AppButton>
+          </article>
+
+          <article className="connection-row">
+            <div className="connection-icon"><Bell size={20} /></div>
+            <div className="connection-copy">
+              <div><h4>Browser notification preview</h4><span className={`connection-badge ${notificationActive ? "is-live" : "is-device"}`}>{notificationActive ? "Permission on" : "Needs permission"}</span></div>
+              <p>Permission and previews are real. Scheduled reminders currently update only while Mini CEO is open.</p>
+            </div>
+            <AppButton variant="secondary" onClick={requestNotifications}>{notificationActive ? "Send test" : "Enable"}</AppButton>
+          </article>
+        </div>
+      </section>
+
+      <section className="connection-group" aria-labelledby="setup-next-title">
+        <div className="connection-group-heading">
+          <div>
+            <p className="eyebrow">Requires backend setup</p>
+            <h3 id="setup-next-title">Not connected yet</h3>
+          </div>
+          <AppButton variant="quiet" onClick={installApp}><UploadSimple size={17} /> Install app</AppButton>
+        </div>
+
+        <div className="connection-list connection-list-pending">
+          <article className="connection-row">
+            <div className="connection-icon"><LinkSimple size={20} /></div>
+            <div className="connection-copy">
+              <div><h4>Accounts and cloud sync</h4><span className="connection-badge is-off">Not connected</span></div>
+              <p>Needed for sign-in, backups, and using the same workspace across an iPhone and computer.</p>
+            </div>
+            <span className="connection-requirement">Database + authentication</span>
+          </article>
+
+          <article className="connection-row">
+            <div className="connection-icon"><MagicWand size={20} /></div>
+            <div className="connection-copy">
+              <div><h4>Hosted AI and character voice</h4><span className="connection-badge is-off">Not connected</span></div>
+              <p>Hermes or OpenAI would power deeper assistance. A voice provider would give the boss one consistent voice.</p>
+            </div>
+            <span className="connection-requirement">Provider keys required</span>
+          </article>
+
+          <article className="connection-row">
+            <div className="connection-icon"><BellRinging size={20} /></div>
+            <div className="connection-copy">
+              <div><h4>Closed-app reminders</h4><span className="connection-badge is-off">Not connected</span></div>
+              <p>Real iPhone reminders after the app closes need Web Push subscriptions and a backend scheduler.</p>
+            </div>
+            <span className="connection-requirement">Push worker required</span>
+          </article>
+
+          <article className="connection-row">
+            <div className="connection-icon"><VideoCamera size={20} /></div>
+            <div className="connection-copy">
+              <div><h4>Creator platforms</h4><span className="connection-badge is-off">Not connected</span></div>
+              <p>TikTok, Instagram, YouTube, Facebook, and X are planning targets only. Mini CEO does not post or read analytics yet.</p>
+            </div>
+            <span className="connection-requirement">Platform approval required</span>
+          </article>
+        </div>
+      </section>
     </div>
   );
 }

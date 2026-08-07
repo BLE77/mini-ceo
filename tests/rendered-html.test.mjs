@@ -98,6 +98,21 @@ test("legacy CSS boss is mounted only after a PNG asset error", async () => {
   assert.doesNotMatch(source, /onLoad=\{\(\) => setLoadedAsset/);
 });
 
+test("classic Mac chrome exposes real commands and honest connection states", async () => {
+  const source = await readFile(
+    new URL("../app/mini-ceo-app.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.doesNotMatch(source, /<span className="mac-menu-item">(?:File|Edit|View|Boss)<\/span>/);
+  assert.match(source, /className=\{`mac-menu-command/);
+  assert.match(source, /section="Connections"/);
+  assert.match(source, /function ConnectionsView/);
+  assert.match(source, /Anything marked not connected has no hidden button or simulated data behind it/);
+  assert.match(source, /Accounts and cloud sync/);
+  assert.match(source, /Creator platforms/);
+});
+
 test("assistant route returns grounded creator help without external configuration", async () => {
   const worker = await getWorker();
   const response = await worker.fetch(

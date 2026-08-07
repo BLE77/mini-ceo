@@ -1,5 +1,11 @@
 export type BossMode = "coach" | "serious" | "unhinged";
-export type AppView = "today" | "ideas" | "schedule" | "skills" | "review";
+export type AppView =
+  | "today"
+  | "ideas"
+  | "schedule"
+  | "skills"
+  | "review"
+  | "connections";
 export type TaskStage =
   | "idea"
   | "research"
