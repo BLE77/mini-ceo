@@ -154,6 +154,38 @@ function isAchievement(value: unknown) {
   );
 }
 
+function isEditorProject(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasStrings(value, [
+      "id",
+      "editorId",
+      "editorName",
+      "editorStudio",
+      "title",
+      "deliverable",
+      "budget",
+      "deadline",
+      "brief",
+      "referenceUrl",
+      "deliveryUrl",
+      "deliveryNote",
+      "revisionNote",
+      "createdAt",
+      "updatedAt",
+      "approvedAt",
+    ]) &&
+    [
+      "requested",
+      "accepted",
+      "delivered",
+      "changes_requested",
+      "approved",
+      "cancelled",
+    ].includes(String(value.status))
+  );
+}
+
 function isMiniCeoState(value: unknown): value is MiniCeoState {
   if (!isRecord(value) || !Number.isInteger(value.version)) return false;
   if (typeof value.onboardingComplete !== "boolean" || !isRecord(value.profile)) {
@@ -185,6 +217,7 @@ function isMiniCeoState(value: unknown): value is MiniCeoState {
     Array.isArray(value.ideas) && value.ideas.every(isIdea) &&
     Array.isArray(value.tasks) && value.tasks.every(isCreatorTask) &&
     Array.isArray(value.achievements) && value.achievements.every(isAchievement) &&
+    Array.isArray(value.editorProjects) && value.editorProjects.every(isEditorProject) &&
     Array.isArray(value.activityDates) &&
     value.activityDates.every((entry) => typeof entry === "string") &&
     isFiniteNumber(value.streak) &&

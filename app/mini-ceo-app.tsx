@@ -15,6 +15,7 @@ import {
   Check,
   CheckCircle,
   Clock,
+  CurrencyCircleDollar,
   Fire,
   House,
   Lightbulb,
@@ -34,6 +35,7 @@ import {
   SpeakerSlash,
   Target,
   UploadSimple,
+  UsersThree,
   VideoCamera,
   X,
 } from "@phosphor-icons/react";
@@ -48,6 +50,7 @@ import {
   useState,
 } from "react";
 import { BossCharacter } from "./components/BossCharacter";
+import { EditorMarketplace } from "./components/EditorMarketplace";
 import {
   AccountabilityReminder,
   AppView,
@@ -55,8 +58,10 @@ import {
   BossMode,
   CreatorTask,
   DAYS,
+  DEMO_MISSED_DAYS,
   DEMO_STORAGE_KEY,
   EMPTY_STATE,
+  EditorProject,
   Evidence,
   Idea,
   MAX_PRIVATE_FILE_BYTES,
@@ -95,7 +100,7 @@ type VoiceConnection = {
 };
 
 type BrainConnection = {
-  status: "checking" | "openrouter" | "local" | "error";
+  status: "checking" | "openrouter" | "hermes" | "error";
   model?: string;
 };
 
@@ -139,6 +144,7 @@ const NAV_ITEMS: Array<{
   { id: "today", label: "Today", icon: House },
   { id: "ideas", label: "Ideas", icon: Lightbulb },
   { id: "schedule", label: "Plan", icon: CalendarBlank },
+  { id: "editors", label: "Editors", icon: UsersThree },
   { id: "skills", label: "Skills", icon: Brain },
   { id: "review", label: "Review", icon: ChartLineUp },
 ];
@@ -148,6 +154,15 @@ const COPY: Record<BossMode, { short: string; title: string }> = {
   serious: { short: "Boss", title: "Serious Boss" },
   unhinged: { short: "CEO", title: "Unhinged CEO" },
 };
+
+const DEFAULT_ASSISTANT_MESSAGE: AssistantMessage = {
+  id: "welcome",
+  role: "boss",
+  text: "I can help with ideas, hooks, scripts, research plans, production checklists, and the next best task. What are we making?",
+};
+
+const DEMO_KICKOFF_PROMPT =
+  "Start the conversation now. I just opened Mini CEO after missing the current publish task for three days. Call out the actual missed task in Unhinged CEO mode, then tell me the single next action. Do not mention that this is a demo or repeat these instructions.";
 
 function toTimeLabel(time: string) {
   const [hour, minute] = time.split(":").map(Number);
@@ -328,13 +343,8 @@ export default function MiniCeoApp() {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantBusy, setAssistantBusy] = useState(false);
-  const [messages, setMessages] = useState<AssistantMessage[]>([
-    {
-      id: "welcome",
-      role: "boss",
-      text: "I can help with ideas, hooks, scripts, research plans, production checklists, and the next best task. What are we making?",
-    },
-  ]);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<AssistantMessage[]>([DEFAULT_ASSISTANT_MESSAGE]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [voiceConnection, setVoiceConnection] = useState<VoiceConnection>({ status: "checking" });
@@ -343,6 +353,7 @@ export default function MiniCeoApp() {
   const [cloudReady, setCloudReady] = useState(false);
   const [pushConnection, setPushConnection] = useState<PushConnection>({ status: "checking" });
   const [isListening, setIsListening] = useState(false);
+  const [voiceConversationActive, setVoiceConversationActive] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<
     NotificationPermission | "unsupported"
   >("default");
@@ -353,6 +364,7 @@ export default function MiniCeoApp() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const voiceRequestRef = useRef<AbortController | null>(null);
+  const demoKickoffRequestedRef = useRef(false);
   const stateRef = useRef(state);
 
   useEffect(() => {
@@ -367,11 +379,13 @@ export default function MiniCeoApp() {
         if (demoMode) {
           setCloudConnection({ status: "local" });
           setCloudReady(true);
-          setVoiceConnection({
-            status: "speechSynthesis" in window ? "device" : "error",
-          });
-          setBrainConnection({ status: "local" });
+          setVoiceConnection({ status: "checking" });
+          setBrainConnection({ status: "checking" });
           setPushConnection({ status: "ready" });
+          setMessages([]);
+          setAssistantError(null);
+          setAssistantOpen(true);
+          setVoiceConversationActive(false);
         }
         if (saved) {
           setState(migrateMiniCeoState(JSON.parse(saved)));
@@ -488,7 +502,7 @@ export default function MiniCeoApp() {
   }, [cloudConnection.status, cloudReady, hydrated, isDemoMode, state]);
 
   useEffect(() => {
-    if (!hydrated || isDemoMode) return;
+    if (!hydrated) return;
     let cancelled = false;
 
     void fetch("/api/voice", { cache: "no-store" })
@@ -505,15 +519,19 @@ export default function MiniCeoApp() {
           });
           return;
         }
-        setVoiceConnection({
-          status: "speechSynthesis" in window ? "device" : "error",
-        });
+        setVoiceConnection(
+          isDemoMode
+            ? { status: "error" }
+            : { status: "speechSynthesis" in window ? "device" : "error" },
+        );
       })
       .catch(() => {
         if (!cancelled) {
-          setVoiceConnection({
-            status: "speechSynthesis" in window ? "device" : "error",
-          });
+          setVoiceConnection(
+            isDemoMode
+              ? { status: "error" }
+              : { status: "speechSynthesis" in window ? "device" : "error" },
+          );
         }
       });
 
@@ -522,11 +540,15 @@ export default function MiniCeoApp() {
         const data = (await response.json()) as {
           connected?: boolean;
           configured?: boolean;
+          provider?: "openrouter" | "hermes" | "unavailable";
           model?: string | null;
         };
         if (cancelled) return;
         if (response.ok && data.connected) {
-          setBrainConnection({ status: "openrouter", model: data.model || undefined });
+          setBrainConnection({
+            status: data.provider === "hermes" ? "hermes" : "openrouter",
+            model: data.model || undefined,
+          });
           return;
         }
         setBrainConnection({ status: "error", model: data.model || undefined });
@@ -535,7 +557,7 @@ export default function MiniCeoApp() {
         if (!cancelled) setBrainConnection({ status: "error" });
       });
 
-    void fetch("/api/push", { cache: "no-store" })
+    if (!isDemoMode) void fetch("/api/push", { cache: "no-store" })
       .then(async (response) => {
         if (response.status === 401) {
           if (!cancelled) setPushConnection({ status: "ready" });
@@ -606,7 +628,11 @@ export default function MiniCeoApp() {
   const speech = bossLine(
     bossMode,
     activeTask,
-    activeTask?.stage === "publish" ? "publish" : "task",
+    reminder?.urgency === "missed"
+      ? "missed"
+      : activeTask?.stage === "publish"
+        ? "publish"
+        : "task",
   );
 
   useEffect(() => {
@@ -638,7 +664,7 @@ export default function MiniCeoApp() {
   }, []);
 
   const speakWithDevice = useCallback(
-    (text: string) => {
+    (text: string, modeOverride?: BossMode) => {
       if (!("speechSynthesis" in window)) {
         setVoiceConnection({ status: "error" });
         setIsSpeaking(false);
@@ -646,6 +672,7 @@ export default function MiniCeoApp() {
       }
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
+      const voiceMode = modeOverride || bossMode;
       const voices = window.speechSynthesis.getVoices();
       const preferred = voices.find(
         (voice) =>
@@ -653,8 +680,8 @@ export default function MiniCeoApp() {
           /samantha|ava|daniel|aaron|serena|moira/i.test(voice.name),
       );
       if (preferred) utterance.voice = preferred;
-      utterance.rate = bossMode === "unhinged" ? 1.08 : bossMode === "coach" ? 0.94 : 1;
-      utterance.pitch = bossMode === "unhinged" ? 1.04 : 0.96;
+      utterance.rate = voiceMode === "unhinged" ? 1.08 : voiceMode === "coach" ? 0.94 : 1;
+      utterance.pitch = voiceMode === "unhinged" ? 1.04 : 0.96;
       utterance.onstart = () => setIsSpeaking(true);
       utterance.onend = () => setIsSpeaking(false);
       utterance.onerror = () => setIsSpeaking(false);
@@ -664,9 +691,10 @@ export default function MiniCeoApp() {
   );
 
   const speak = useCallback(
-    (text: string) => {
+    (text: string, modeOverride?: BossMode) => {
       if (!voiceEnabled) return;
       stopSpeaking();
+      const voiceMode = modeOverride || bossMode;
 
       const controller = new AbortController();
       voiceRequestRef.current = controller;
@@ -675,7 +703,7 @@ export default function MiniCeoApp() {
       void fetch("/api/voice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.slice(0, 900), bossMode }),
+        body: JSON.stringify({ text: text.slice(0, 900), bossMode: voiceMode }),
         signal: controller.signal,
       })
         .then(async (response) => {
@@ -693,7 +721,12 @@ export default function MiniCeoApp() {
           audio.onended = stopSpeaking;
           audio.onerror = () => {
             stopSpeaking();
-            speakWithDevice(text);
+            if (isDemoMode) {
+              setVoiceConnection({ status: "error" });
+              setToast("The real ElevenLabs character voice could not play. No device voice was substituted.");
+            } else {
+              speakWithDevice(text, voiceMode);
+            }
           };
           setVoiceConnection({ status: "elevenlabs", selectedVoice: voiceName });
           await audio.play();
@@ -701,16 +734,43 @@ export default function MiniCeoApp() {
         .catch(() => {
           if (controller.signal.aborted) return;
           stopSpeaking();
-          setVoiceConnection({ status: "speechSynthesis" in window ? "device" : "error" });
-          speakWithDevice(text);
+          if (isDemoMode) {
+            setVoiceConnection({ status: "error" });
+            setVoiceConversationActive(false);
+            setToast("Connect ElevenLabs to hear the real Unhinged CEO voice. No fake voice was used.");
+          } else {
+            setVoiceConnection({ status: "speechSynthesis" in window ? "device" : "error" });
+            speakWithDevice(text, voiceMode);
+          }
         });
     },
-    [bossMode, speakWithDevice, stopSpeaking, voiceEnabled],
+    [bossMode, isDemoMode, speakWithDevice, stopSpeaking, voiceEnabled],
   );
 
   useEffect(() => stopSpeaking, [stopSpeaking]);
 
   const showToast = (message: string) => setToast(message);
+
+  const createEditorProject = (project: EditorProject) => {
+    setState((current) => ({
+      ...current,
+      editorProjects: [project, ...current.editorProjects],
+    }));
+    showToast("Edit project saved to your Mini CEO workspace.");
+  };
+
+  const updateEditorProject = (id: string, update: Partial<EditorProject>) => {
+    const updatedAt = new Date().toISOString();
+    setState((current) => ({
+      ...current,
+      editorProjects: current.editorProjects.map((project) =>
+        project.id === id ? { ...project, ...update, updatedAt } : project,
+      ),
+    }));
+    if (update.status === "approved") showToast("Final cut approved. Payout is still disabled.");
+    else if (update.status === "changes_requested") showToast("Revision notes saved to the project.");
+    else if (update.status === "delivered") showToast("Delivery saved. The project is ready for review.");
+  };
 
   const requestNotifications = async () => {
     if (!("serviceWorker" in navigator) || !("Notification" in window)) {
@@ -1093,7 +1153,10 @@ export default function MiniCeoApp() {
   };
 
   const sendAssistant = useCallback(
-    async (promptOverride?: string) => {
+    async (
+      promptOverride?: string,
+      options: { hideCreator?: boolean } = {},
+    ) => {
       const prompt = (promptOverride ?? assistantInput).trim();
       if (!prompt || assistantBusy) return;
       const creatorMessage: AssistantMessage = {
@@ -1101,8 +1164,11 @@ export default function MiniCeoApp() {
         role: "creator",
         text: prompt,
       };
-      setMessages((current) => [...current, creatorMessage]);
+      if (!options.hideCreator) {
+        setMessages((current) => [...current, creatorMessage]);
+      }
       setAssistantInput("");
+      setAssistantError(null);
       setAssistantBusy(true);
       try {
         const response = await fetch("/api/assistant", {
@@ -1110,10 +1176,19 @@ export default function MiniCeoApp() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: prompt,
+            demo: isDemoMode,
+            history: messages.slice(-10),
             context: {
               goal: state.profile.goal,
               topics: state.profile.topics,
               bossMode,
+              missedDays:
+                isDemoMode && activeTask
+                  ? Math.max(
+                      DEMO_MISSED_DAYS,
+                      Math.floor((Date.now() - new Date(activeTask.dueAt).getTime()) / 86_400_000),
+                    )
+                  : undefined,
               task: activeTask,
               idea: activeIdea,
               skill: state.skills[0],
@@ -1125,16 +1200,21 @@ export default function MiniCeoApp() {
             },
           }),
         });
-        if (!response.ok) throw new Error("Assistant unavailable");
-        const data = (await response.json()) as {
-          reply: string;
+        const data = (await response.json().catch(() => ({}))) as {
+          reply?: string;
           provider: string;
           model?: string;
+          error?: string;
         };
+        if (!response.ok || !data.reply) {
+          throw new Error(data.error || "Live Mini CEO agent unavailable");
+        }
         setBrainConnection(
           data.provider === "openrouter"
             ? { status: "openrouter", model: data.model }
-            : { status: "error" },
+            : data.provider === "hermes"
+              ? { status: "hermes", model: data.model }
+              : { status: "error" },
         );
         const reply: AssistantMessage = {
           id: makeId("message"),
@@ -1143,20 +1223,49 @@ export default function MiniCeoApp() {
         };
         setMessages((current) => [...current, reply]);
         speak(data.reply);
-      } catch {
+      } catch (error) {
         setBrainConnection({ status: "error" });
+        if (isDemoMode) {
+          setVoiceConversationActive(false);
+          setAssistantError(
+            error instanceof Error
+              ? `${error.message}. Connect OpenRouter or Hermes to continue the real conversation.`
+              : "The live Mini CEO agent is unavailable. No canned reply was substituted.",
+          );
+          return;
+        }
         const fallback = "I could not reach the assistant service. Your schedule is safe; try again in a moment.";
         setMessages((current) => [
           ...current,
           { id: makeId("message"), role: "boss", text: fallback },
         ]);
+        speak(fallback);
       } finally {
         setAssistantBusy(false);
       }
-    }, [activeIdea, activeTask, assistantBusy, assistantInput, bossMode, speak, state.profile.goal, state.profile.topics, state.references, state.skills],
+    }, [activeIdea, activeTask, assistantBusy, assistantInput, bossMode, isDemoMode, messages, speak, state.profile.goal, state.profile.topics, state.references, state.skills],
   );
 
-  const startListening = () => {
+  useEffect(() => {
+    const liveBrainConnected =
+      brainConnection.status === "openrouter" || brainConnection.status === "hermes";
+    if (
+      !hydrated ||
+      !isDemoMode ||
+      !assistantOpen ||
+      !liveBrainConnected ||
+      voiceConnection.status !== "elevenlabs" ||
+      demoKickoffRequestedRef.current
+    ) {
+      return;
+    }
+    demoKickoffRequestedRef.current = true;
+    setVoiceConversationActive(true);
+    void sendAssistant(DEMO_KICKOFF_PROMPT, { hideCreator: true });
+  }, [assistantOpen, brainConnection.status, hydrated, isDemoMode, sendAssistant, voiceConnection.status]);
+
+  const startListening = useCallback(() => {
+    if (assistantBusy || isListening) return;
     const browserWindow = window as typeof window & {
       SpeechRecognition?: RecognitionConstructor;
       webkitSpeechRecognition?: RecognitionConstructor;
@@ -1165,6 +1274,7 @@ export default function MiniCeoApp() {
       browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition;
     if (!Recognition) {
       showToast("Voice input is not supported in this browser. You can still type to the boss.");
+      setVoiceConversationActive(false);
       return;
     }
     const recognition = new Recognition();
@@ -1175,31 +1285,83 @@ export default function MiniCeoApp() {
       const transcript = event.results[0]?.[0]?.transcript || "";
       setAssistantInput(transcript);
       setIsListening(false);
+      recognitionRef.current = null;
       window.setTimeout(() => void sendAssistant(transcript), 80);
     };
     recognition.onerror = () => {
       setIsListening(false);
+      setVoiceConversationActive(false);
+      recognitionRef.current = null;
       showToast("I could not hear that. Try again or type your request.");
     };
-    recognition.onend = () => setIsListening(false);
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
     recognitionRef.current = recognition;
     setIsListening(true);
     recognition.start();
-  };
+  }, [assistantBusy, isListening, sendAssistant]);
 
-  const stopListening = () => {
+  const stopListening = useCallback(() => {
     recognitionRef.current?.stop();
+    recognitionRef.current = null;
     setIsListening(false);
-  };
+  }, []);
+
+  const startVoiceConversation = useCallback(() => {
+    if (
+      isDemoMode &&
+      (voiceConnection.status !== "elevenlabs" ||
+        (brainConnection.status !== "openrouter" && brainConnection.status !== "hermes"))
+    ) {
+      const missing = [
+        voiceConnection.status !== "elevenlabs" ? "ElevenLabs voice" : null,
+        brainConnection.status !== "openrouter" && brainConnection.status !== "hermes"
+          ? "OpenRouter or Hermes agent"
+          : null,
+      ].filter(Boolean).join(" and ");
+      const message = `Connect ${missing} before starting the real voice conversation.`;
+      setAssistantError(message);
+      showToast(message);
+      return;
+    }
+    if (!voiceEnabled) setVoiceEnabled(true);
+    setAssistantError(null);
+    setVoiceConversationActive(true);
+  }, [brainConnection.status, isDemoMode, voiceConnection.status, voiceEnabled]);
+
+  const stopVoiceConversation = useCallback(() => {
+    setVoiceConversationActive(false);
+    stopListening();
+  }, [stopListening]);
+
+  useEffect(() => {
+    if (
+      !voiceConversationActive ||
+      !assistantOpen ||
+      assistantBusy ||
+      isSpeaking ||
+      isListening
+    ) {
+      return;
+    }
+    const timeout = window.setTimeout(startListening, 420);
+    return () => window.clearTimeout(timeout);
+  }, [assistantBusy, assistantOpen, isListening, isSpeaking, startListening, voiceConversationActive]);
 
   const resetWorkspace = async () => {
     if (isDemoMode) {
       localStorage.removeItem(DEMO_STORAGE_KEY);
+      demoKickoffRequestedRef.current = false;
       setState(createDemoState());
       setView("today");
-      setAssistantOpen(false);
+      setMessages([]);
+      setAssistantError(null);
+      setAssistantOpen(true);
+      setVoiceConversationActive(false);
       setProofTask(null);
-      showToast("Demo story reset. You are back at the active shoot assignment.");
+      showToast("Demo story reset. Waiting for the live agent and ElevenLabs voice.");
       return;
     }
 
@@ -1222,9 +1384,23 @@ export default function MiniCeoApp() {
   };
 
   const launchDemo = () => {
+    localStorage.removeItem(DEMO_STORAGE_KEY);
+    demoKickoffRequestedRef.current = false;
+    setState(createDemoState());
+    setIsDemoMode(true);
+    setView("today");
+    setMessages([]);
+    setAssistantError(null);
+    setAssistantOpen(true);
+    setVoiceConversationActive(false);
+    setCloudConnection({ status: "local" });
+    setCloudReady(true);
+    setBrainConnection({ status: "checking" });
+    setVoiceConnection({ status: "checking" });
     const url = new URL(window.location.href);
     url.searchParams.set("demo", "1");
-    window.location.href = url.toString();
+    window.history.replaceState({}, "", url);
+    setVoiceEnabled(true);
   };
 
   const exitDemo = () => {
@@ -1332,8 +1508,8 @@ export default function MiniCeoApp() {
 
         {isDemoMode && (
           <div className="demo-mode-ribbon" role="status">
-            <span><Sparkle size={15} weight="fill" /> Presentation workspace</span>
-            <p>Safe sample data · your real workspace stays untouched</p>
+            <span><Fire size={15} weight="fill" /> Unhinged CEO rehearsal</span>
+            <p>3 missed days · AI dog pooper scooper publish overdue · live agent and ElevenLabs only</p>
             <div>
               <button type="button" onClick={resetWorkspace}>Reset story</button>
               <button type="button" onClick={exitDemo}>Exit</button>
@@ -1384,6 +1560,20 @@ export default function MiniCeoApp() {
             {view === "schedule" && (
               <ScheduleView state={state} moveTask={moveTask} />
             )}
+            {view === "editors" && (
+              <EditorMarketplace
+                projects={state.editorProjects}
+                accountLabel={
+                  isDemoMode
+                    ? "this demo workspace"
+                    : cloudConnection.status === "synced"
+                      ? "your account workspace"
+                      : "this device"
+                }
+                onCreateProject={createEditorProject}
+                onUpdateProject={updateEditorProject}
+              />
+            )}
             {view === "skills" && (
               <SkillsView state={state} addReferenceFile={addReferenceFile} openAssistant={() => setAssistantOpen(true)} />
             )}
@@ -1415,6 +1605,7 @@ export default function MiniCeoApp() {
                 cloudConnection={cloudConnection}
                 pushConnection={pushConnection}
                 exportWorkspace={exportWorkspace}
+                openMarketplace={() => setView("editors")}
               />
             )}
           </motion.div>
@@ -1448,14 +1639,22 @@ export default function MiniCeoApp() {
         {assistantOpen && (
           <AssistantSheet
             messages={messages}
+            error={assistantError}
             input={assistantInput}
             setInput={setAssistantInput}
             busy={assistantBusy}
             send={sendAssistant}
-            close={() => setAssistantOpen(false)}
+            close={() => {
+              stopVoiceConversation();
+              stopSpeaking();
+              setAssistantOpen(false);
+            }}
             isListening={isListening}
-            startListening={startListening}
-            stopListening={stopListening}
+            voiceConversationActive={voiceConversationActive}
+            startVoiceConversation={startVoiceConversation}
+            stopVoiceConversation={stopVoiceConversation}
+            brainConnection={brainConnection}
+            voiceConnection={voiceConnection}
             bossMode={bossMode}
             isSpeaking={isSpeaking}
             stopSpeaking={stopSpeaking}
@@ -2341,7 +2540,7 @@ function ReviewView({
           </div>
         </div>
         <button className="setting-row" onClick={() => setVoiceEnabled(!voiceEnabled)}>
-          <div>{voiceEnabled ? <SpeakerHigh size={19} /> : <SpeakerSlash size={19} />}<span><strong>Mini CEO voice</strong><small>{!voiceEnabled ? "Voice replies are muted" : voiceConnection.status === "elevenlabs" ? `${voiceConnection.selectedVoice || "ElevenLabs"} is the hosted character voice` : "Device voice fallback is active"}</small></span></div>
+          <div>{voiceEnabled ? <SpeakerHigh size={19} /> : <SpeakerSlash size={19} />}<span><strong>Mini CEO voice</strong><small>{!voiceEnabled ? "Voice replies are muted" : voiceConnection.status === "elevenlabs" ? `${voiceConnection.selectedVoice || "ElevenLabs"} is the hosted character voice` : isDemoMode ? "Demo voice is locked to real ElevenLabs audio" : "Device voice fallback is active"}</small></span></div>
           <span className={`toggle ${voiceEnabled ? "is-on" : ""}`}><i /></span>
         </button>
         <button className="setting-row" onClick={installApp}>
@@ -2373,6 +2572,7 @@ function ConnectionsView({
   cloudConnection,
   pushConnection,
   exportWorkspace,
+  openMarketplace,
 }: {
   notificationPermission: NotificationPermission | "unsupported";
   requestNotifications: () => void;
@@ -2385,6 +2585,7 @@ function ConnectionsView({
   cloudConnection: CloudConnection;
   pushConnection: PushConnection;
   exportWorkspace: () => void;
+  openMarketplace: () => void;
 }) {
   const notificationActive = notificationPermission === "granted";
   const deviceVoiceAvailable = typeof window !== "undefined" && "speechSynthesis" in window;
@@ -2405,11 +2606,11 @@ function ConnectionsView({
       : "The hosted voice is unavailable, so Mini CEO will use a voice installed on this device when possible.";
   const brainStatus = brainConnection.status === "openrouter"
     ? "Active"
+    : brainConnection.status === "hermes"
+      ? "Active"
     : brainConnection.status === "checking"
       ? "Checking"
-      : brainConnection.status === "local"
-        ? "Demo only"
-        : "Connection error";
+      : "Connection error";
   const cloudStatus = cloudConnection.status === "synced"
     ? "Synced"
     : cloudConnection.status === "checking"
@@ -2459,8 +2660,8 @@ function ConnectionsView({
           <article className="connection-row">
             <div className="connection-icon"><Brain size={20} /></div>
             <div className="connection-copy">
-              <div><h4>OpenRouter boss brain</h4><span className={`connection-badge ${brainConnection.status === "openrouter" ? "is-live" : brainConnection.status === "checking" ? "is-device" : "is-off"}`}>{brainStatus}</span></div>
-              <p>{brainConnection.status === "openrouter" ? `${brainConnection.model || "The configured OpenRouter model"} writes the boss replies. Unhinged CEO can use comedic profanity without personal abuse.` : "The live boss brain is unavailable. Mini CEO will show the connection failure instead of substituting canned replies."}</p>
+              <div><h4>Live boss agent</h4><span className={`connection-badge ${brainConnection.status === "openrouter" || brainConnection.status === "hermes" ? "is-live" : brainConnection.status === "checking" ? "is-device" : "is-off"}`}>{brainStatus}</span></div>
+              <p>{brainConnection.status === "openrouter" || brainConnection.status === "hermes" ? `${brainConnection.model || (brainConnection.status === "hermes" ? "The configured Hermes agent" : "The configured OpenRouter model")} writes each boss reply from the current task data and conversation history.` : "The live boss agent is unavailable. Mini CEO will show the connection failure instead of substituting canned replies."}</p>
             </div>
             <AppButton variant="secondary" onClick={openAssistant}>Open boss</AppButton>
           </article>
@@ -2481,6 +2682,15 @@ function ConnectionsView({
               <p>{pushConnection.status === "subscribed" ? "This device has a real server-held push subscription, and notifications can arrive after the Home Screen app closes." : "Install Mini CEO to the iPhone Home Screen, then tap Enable to create a real push subscription and receive a server-sent test."}</p>
             </div>
             <AppButton variant="secondary" onClick={requestNotifications}>{notificationActive ? "Send test" : "Enable"}</AppButton>
+          </article>
+
+          <article className="connection-row">
+            <div className="connection-icon"><UsersThree size={20} /></div>
+            <div className="connection-copy">
+              <div><h4>Mini CEO editors marketplace</h4><span className="connection-badge is-device">Preview only</span></div>
+              <p>The directory, filters, profiles, and request form work locally with clearly labeled sample data. No editor is contacted and no request leaves this browser.</p>
+            </div>
+            <AppButton variant="secondary" onClick={openMarketplace}>Browse</AppButton>
           </article>
         </div>
       </section>
@@ -2512,6 +2722,15 @@ function ConnectionsView({
             </div>
             <span className="connection-requirement">Platform approval required</span>
           </article>
+
+          <article className="connection-row">
+            <div className="connection-icon"><CurrencyCircleDollar size={20} /></div>
+            <div className="connection-copy">
+              <div><h4>Editor wallet payouts</h4><span className="connection-badge is-off">Not connected</span></div>
+              <p>The marketplace shows the planned approve-then-pay workflow, but it has no wallet, QuickNode, OKX, escrow contract, or transaction endpoint.</p>
+            </div>
+            <span className="connection-requirement">Payment integration intentionally disabled</span>
+          </article>
         </div>
       </section>
     </div>
@@ -2520,31 +2739,54 @@ function ConnectionsView({
 
 function AssistantSheet({
   messages,
+  error,
   input,
   setInput,
   busy,
   send,
   close,
   isListening,
-  startListening,
-  stopListening,
+  voiceConversationActive,
+  startVoiceConversation,
+  stopVoiceConversation,
+  brainConnection,
+  voiceConnection,
   bossMode,
   isSpeaking,
   stopSpeaking,
 }: {
   messages: AssistantMessage[];
+  error: string | null;
   input: string;
   setInput: (value: string) => void;
   busy: boolean;
   send: (promptOverride?: string) => void;
   close: () => void;
   isListening: boolean;
-  startListening: () => void;
-  stopListening: () => void;
+  voiceConversationActive: boolean;
+  startVoiceConversation: () => void;
+  stopVoiceConversation: () => void;
+  brainConnection: BrainConnection;
+  voiceConnection: VoiceConnection;
   bossMode: BossMode;
   isSpeaking: boolean;
   stopSpeaking: () => void;
 }) {
+  const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const unhinged = bossMode === "unhinged";
+  const liveBrainConnected =
+    brainConnection.status === "openrouter" || brainConnection.status === "hermes";
+  const liveVoiceConnected = voiceConnection.status === "elevenlabs";
+  const checkingConnections =
+    brainConnection.status === "checking" || voiceConnection.status === "checking";
+  const suggestions = unhinged
+    ? ["What task should I do today?", "Why am I three days late?", "Give me the fastest way to publish"]
+    : ["Give me three stronger hooks", "Turn this into bullet points", "What props do I need?"];
+
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [busy, messages]);
+
   return (
     <motion.div className="sheet-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
       <motion.section className="assistant-sheet" initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 190, damping: 25 }}>
@@ -2552,35 +2794,52 @@ function AssistantSheet({
           <div className="assistant-boss-mini">
             <BossCharacter
               mode={bossMode}
-              mood="talking"
-              expression={busy ? "thinking" : isSpeaking ? "surprised" : "approving"}
+              mood={unhinged ? "impatient" : "talking"}
+              expression={busy ? "thinking" : isSpeaking ? "surprised" : unhinged ? "impatient" : "approving"}
               speaking={isSpeaking}
               compact
             />
           </div>
-          <div><span>Mini CEO assistant</span><strong>What are we solving?</strong></div>
+          <div>
+            <span>{voiceConversationActive ? "Live voice conversation" : checkingConnections ? "Connecting live CEO" : "Mini CEO assistant"}</span>
+            <strong>{unhinged ? "The board is furious." : "What are we solving?"}</strong>
+          </div>
           {isSpeaking && <button onClick={stopSpeaking} aria-label="Stop voice"><SpeakerSlash size={18} /></button>}
           <button onClick={close} aria-label="Close assistant"><X size={20} /></button>
         </header>
+        <div className={`voice-conversation-status ${voiceConversationActive ? "is-active" : ""}`} role="status">
+          <span aria-hidden="true" />
+          <strong>{voiceConversationActive ? isListening ? "Listening to you" : isSpeaking ? "ElevenLabs CEO is talking" : busy ? "Live agent is thinking" : "Keeping the mic open" : checkingConnections ? "Checking live services" : liveBrainConnected && liveVoiceConnected ? "Live agent and voice ready" : "Live connections required"}</strong>
+          <small>{voiceConversationActive ? "Speak naturally. The microphone reopens after every ElevenLabs reply." : liveBrainConnected && liveVoiceConnected ? "Tap the microphone to start the real continuous conversation." : "Demo mode never substitutes canned dialogue or a browser voice."}</small>
+        </div>
         <div className="assistant-suggestions">
-          {["Give me three stronger hooks", "Turn this into bullet points", "What props do I need?"].map((suggestion) => (
-            <button key={suggestion} onClick={() => void send(suggestion)}>{suggestion}</button>
+          {suggestions.map((suggestion) => (
+            <button key={suggestion} onClick={() => void send(suggestion)} disabled={!liveBrainConnected || busy}>{suggestion}</button>
           ))}
         </div>
         <div className="message-list">
+          {!messages.length && !busy && (
+            <div className="assistant-live-state">
+              <Brain size={25} weight="fill" />
+              <h3>{checkingConnections ? "Calling the real Mini CEO" : liveBrainConnected ? "Live agent connected" : "Live agent connection required"}</h3>
+              <p>{checkingConnections ? "Checking OpenRouter or Hermes and the ElevenLabs character voice." : liveBrainConnected ? liveVoiceConnected ? "The agent has the three missed days and overdue AI dog pooper scooper task as context." : "The live agent is ready, but ElevenLabs must connect before voice mode can begin." : "Configure OpenRouter or Hermes. The demo will not manufacture a boss reply."}</p>
+            </div>
+          )}
+          {error && <div className="assistant-live-error" role="alert">{error}</div>}
           {messages.map((message) => (
             <div key={message.id} className={`message message-${message.role}`}>{message.text}</div>
           ))}
           {busy && <div className="message message-boss typing-message"><span /><span /><span /></div>}
+          <div ref={messageEndRef} />
         </div>
         <form className="assistant-composer" onSubmit={(event) => { event.preventDefault(); void send(); }}>
-          <button type="button" className={isListening ? "is-listening" : ""} onClick={isListening ? stopListening : startListening} aria-label={isListening ? "Stop listening" : "Talk to Mini CEO"}>
-            {isListening ? <Pause size={19} weight="fill" /> : <Microphone size={19} weight="fill" />}
+          <button type="button" className={voiceConversationActive ? "is-listening" : ""} onClick={voiceConversationActive ? stopVoiceConversation : startVoiceConversation} aria-label={voiceConversationActive ? "End voice conversation" : "Start voice conversation"}>
+            {voiceConversationActive ? <Pause size={19} weight="fill" /> : <Microphone size={19} weight="fill" />}
           </button>
-          <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={isListening ? "Listening..." : "Ask about the idea, script, or shoot"} />
-          <button type="submit" disabled={!input.trim() || busy} aria-label="Send to Mini CEO"><PaperPlaneTilt size={19} weight="fill" /></button>
+          <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={isListening ? "Listening..." : voiceConversationActive ? "Talk or type your reply" : "Ask about the idea, script, or shoot"} />
+          <button type="submit" disabled={!input.trim() || busy || !liveBrainConnected} aria-label="Send to Mini CEO"><PaperPlaneTilt size={19} weight="fill" /></button>
         </form>
-        <footer><LockKey size={13} /> The assistant adapter can connect to Hermes without changing this experience.</footer>
+        <footer><LockKey size={13} /> Every CEO reply is a live agent response · demo speech uses ElevenLabs only</footer>
       </motion.section>
     </motion.div>
   );

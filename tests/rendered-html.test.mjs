@@ -110,10 +110,32 @@ test("classic Mac chrome exposes real commands and honest connection states", as
   assert.match(source, /function ConnectionsView/);
   assert.match(source, /Anything marked not connected has no hidden button or simulated data behind it/);
   assert.match(source, /Account and creator workspace/);
-  assert.match(source, /OpenRouter boss brain/);
+  assert.match(source, /Live boss agent/);
   assert.match(source, /ElevenLabs character voice/);
   assert.match(source, /iPhone Web Push/);
   assert.match(source, /Creator platforms/);
+  assert.match(source, /Mini CEO editors marketplace/);
+  assert.match(source, /Editor wallet payouts/);
+});
+
+test("editor marketplace persists a complete local workflow while payments stay disconnected", async () => {
+  const [appSource, marketplaceSource, syncSource] = await Promise.all([
+    readFile(new URL("../app/mini-ceo-app.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/EditorMarketplace.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/sync/route.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(appSource, /projects=\{state\.editorProjects\}/);
+  assert.match(appSource, /editorProjects: \[project, \.\.\.current\.editorProjects\]/);
+  assert.match(marketplaceSource, /Local workflow simulator/);
+  assert.match(marketplaceSource, /Simulate acceptance/);
+  assert.match(marketplaceSource, /Simulate delivery/);
+  assert.match(marketplaceSource, /Request changes/);
+  assert.match(marketplaceSource, /Approve final cut/);
+  assert.match(marketplaceSource, /cryptoPayouts: false/);
+  assert.match(marketplaceSource, /USDC payout disabled/);
+  assert.match(syncSource, /function isEditorProject/);
+  assert.doesNotMatch(marketplaceSource, /fetch\(|QuickNode|onchainos|OKX_API_KEY|wallet\.send/);
 });
 
 test("private backend routes require host authentication before data access", async () => {
@@ -155,6 +177,44 @@ test("assistant route refuses to simulate creator help without a live provider",
           goal: "Make AI news useful for working creators",
           topics: ["AI news"],
           bossMode: "serious",
+        },
+      }),
+    }),
+    bindings(),
+    executionContext,
+  );
+
+  assert.equal(response.status, 503);
+  const body = await response.json();
+  assert.match(body.error, /No simulated reply was substituted/i);
+  assert.equal(body.reply, undefined);
+});
+
+test("demo assistant never substitutes canned dialogue for a live agent", async () => {
+  const worker = await getWorker();
+  const response = await worker.fetch(
+    new Request("http://localhost/api/assistant", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        message: "What task should I do today?",
+        demo: true,
+        history: [
+          {
+            role: "boss",
+            text: "You missed the AI dog pooper scooper publish deadline.",
+          },
+        ],
+        context: {
+          goal: "Turn weird AI products into useful and funny short form reviews.",
+          topics: ["weird AI products"],
+          bossMode: "unhinged",
+          missedDays: 3,
+          task: {
+            title: "Publish the AI dog pooper scooper video",
+            status: "active",
+            stage: "publish",
+          },
         },
       }),
     }),
@@ -329,12 +389,60 @@ test("demo mode seeds a complete isolated presentation story", async () => {
   assert.notEqual(DEMO_STORAGE_KEY, STORAGE_KEY);
   assert.equal(demo.onboardingComplete, true);
   assert.equal(demo.profile.name, "Alex");
+  assert.equal(demo.profile.bossMode, "unhinged");
   assert.equal(demo.publishedThisWeek, 1);
+  assert.equal(demo.streak, 0);
   assert.equal(demo.skills.length, 2);
   assert.equal(demo.ideas.length, 5);
   assert.equal(demo.tasks.filter((task) => task.status === "active").length, 1);
+  assert.match(
+    demo.tasks.find((task) => task.status === "active").title,
+    /AI dog pooper scooper/i,
+  );
+  assert.equal(
+    new Date(2026, 7, 6, 12, 0, 0).getTime() -
+      new Date(demo.tasks.find((task) => task.status === "active").dueAt).getTime(),
+    3 * 24 * 60 * 60 * 1000,
+  );
   assert.ok(demo.tasks.filter((task) => task.status === "done").length >= 7);
   assert.ok(demo.achievements.some((achievement) => achievement.title === "First publish"));
+  assert.equal(demo.editorProjects.length, 1);
+  assert.equal(demo.editorProjects[0].status, "delivered");
+});
+
+test("workspace migration adds editor projects safely and preserves valid lifecycle state", async () => {
+  const { createEmptyState, migrateMiniCeoState } = await getStateModel();
+  const now = new Date(2026, 7, 6, 12, 0, 0);
+  const legacy = createEmptyState(now);
+  delete legacy.editorProjects;
+
+  const migratedLegacy = migrateMiniCeoState(legacy, now);
+  assert.equal(migratedLegacy.version, 3);
+  assert.deepEqual(migratedLegacy.editorProjects, []);
+
+  const project = {
+    id: "editor_project_1",
+    editorId: "amina-duarte",
+    editorName: "Amina Duarte",
+    editorStudio: "Cut Room 11",
+    title: "Launch recap",
+    deliverable: "Short-form vertical video",
+    budget: "$150",
+    deadline: "2026-08-12",
+    brief: "Create a clean launch recap with captions and a strong opening beat.",
+    referenceUrl: "https://example.com/brief",
+    status: "changes_requested",
+    deliveryUrl: "https://example.com/cut",
+    deliveryNote: "First cut ready for review.",
+    revisionNote: "Tighten the first ten seconds.",
+    createdAt: "2026-08-06T12:00:00.000Z",
+    updatedAt: "2026-08-06T13:00:00.000Z",
+    approvedAt: "",
+  };
+  const migrated = migrateMiniCeoState({ ...legacy, editorProjects: [project] }, now);
+  assert.equal(migrated.editorProjects.length, 1);
+  assert.equal(migrated.editorProjects[0].status, "changes_requested");
+  assert.equal(migrated.editorProjects[0].revisionNote, "Tighten the first ten seconds.");
 });
 
 test("accountability ladder respects quiet hours and boss-specific pressure", async () => {
@@ -395,5 +503,6 @@ test("production idea flow contains no template generator or fake scoring", asyn
   assert.doesNotMatch(appSource, /setTimeout\(resolve,\s*850|% goal fit|Content Skill grew/);
   assert.match(ideaRouteSource, /process\.env\.OPENROUTER_API_KEY/);
   assert.match(ideaRouteSource, /No template ideas were (?:generated|substituted)/);
-  assert.match(ideaRouteSource, /Generated by the live Mini CEO model/);
+  assert.match(ideaRouteSource, /kind:\s*"ai-original"/);
+  assert.match(ideaRouteSource, /Researched \$\{researchedAt\.toISOString\(\)\}/);
 });

@@ -1,0 +1,76 @@
+/* Final contrast layer for the colorful System 7 theme.
+   Keep this after globals.css so legacy warm/orange rules cannot win. */
+:root {
+  --accent: #2f6f87;
+  --accent-dark: #1f5266;
+  --accent-soft: #b9dadd;
+  --success: #356b4d;
+  --petrol: #245f69;
+  --gold-faint: #e9e2be;
+}
+
+/* These two panels were converted from dark cards to pale Mac windows, but
+   their original white/orange foreground colors were still active. */
+.schedule-preview-panel,
+.assistant-capabilities {
+  color: var(--mac-black);
+}
+
+.schedule-preview-panel .eyebrow,
+.preview-timeline > div > span,
+.assistant-capabilities > div:first-child,
+.idea-verification {
+  color: var(--accent-dark);
+}
+
+.schedule-preview-panel > p:not(.eyebrow),
+.preview-timeline small {
+  color: var(--ink-soft);
+}
+
+.preview-timeline > div > div {
+  border-left-color: var(--line);
+}
+
+.capability-chips button {
+  border-color: var(--mac-black);
+  background: #d5e8e1;
+  color: var(--mac-black);
+}
+
+.capability-chips button:hover,
+.capability-chips button:focus-visible {
+  background: #b9dadd;
+}
+
+.voice-conversation-status.is-active {
+  background: #c8e1dc;
+  color: var(--mac-black);
+}
+
+.voice-conversation-status.is-active > span {
+  background: var(--success);
+}
+
+/* Marketplace work in progress uses the same readable blue/green palette. */
+.marketplace-workspace-tabs button.is-active,
+.marketplace-project-card.is-delivered .marketplace-project-status,
+.marketplace-project-card.is-approved .marketplace-project-status,
+.marketplace-project-progress span.is-complete,
+.marketplace-project-party > span,
+.marketplace-project-timeline .is-complete span {
+  background: var(--petrol);
+  color: var(--mac-light);
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --line: rgba(32, 49, 56, 0.68);
+  }
+
+  .capability-chips button,
+  .schedule-preview-panel,
+  .assistant-capabilities {
+    border-color: var(--mac-black);
+  }
+}

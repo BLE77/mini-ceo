@@ -92,15 +92,29 @@ function voiceScore(voice: ReturnType<typeof parseVoices>[number]) {
 }
 
 function selectBossVoice(voices: ReturnType<typeof parseVoices>) {
-  const preferredNames = ["eldrin", "sawyer", "wyatt", "finley"];
+  const configuredName = process.env.ELEVENLABS_VOICE_NAME?.trim();
+  if (configuredName) {
+    const configuredMatch = voices.find((voice) =>
+      voice.name.toLowerCase().includes(configuredName.toLowerCase()),
+    );
+    if (configuredMatch) return configuredMatch;
+  }
+
+  // Jon was the original fallback. Prefer a noticeably different character
+  // voice, and keep Jon out of automatic selection when another voice exists.
+  const withoutOriginal = voices.filter(
+    (voice) => !/\bjon\b/i.test(voice.name),
+  );
+  const candidates = withoutOriginal.length ? withoutOriginal : voices;
+  const preferredNames = ["adam", "brian", "george", "clyde", "eric"];
   for (const preferredName of preferredNames) {
-    const preferredMatch = voices.find((voice) =>
+    const preferredMatch = candidates.find((voice) =>
       new RegExp(`\\b${preferredName}\\b`, "i").test(voice.name),
     );
     if (preferredMatch) return preferredMatch;
   }
 
-  return voices
+  return candidates
     .map((voice, index) => ({ voice, index, score: voiceScore(voice) }))
     .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.voice;
 }

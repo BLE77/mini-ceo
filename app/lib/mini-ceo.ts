@@ -3,6 +3,7 @@ export type AppView =
   | "today"
   | "ideas"
   | "schedule"
+  | "editors"
   | "skills"
   | "review"
   | "connections";
@@ -96,6 +97,34 @@ export interface Achievement {
   unlockedAt: string;
 }
 
+export type EditorProjectStatus =
+  | "requested"
+  | "accepted"
+  | "delivered"
+  | "changes_requested"
+  | "approved"
+  | "cancelled";
+
+export interface EditorProject {
+  id: string;
+  editorId: string;
+  editorName: string;
+  editorStudio: string;
+  title: string;
+  deliverable: string;
+  budget: string;
+  deadline: string;
+  brief: string;
+  referenceUrl: string;
+  status: EditorProjectStatus;
+  deliveryUrl: string;
+  deliveryNote: string;
+  revisionNote: string;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt: string;
+}
+
 export interface MiniCeoState {
   version: number;
   onboardingComplete: boolean;
@@ -109,13 +138,15 @@ export interface MiniCeoState {
   bossApproval: number;
   publishedThisWeek: number;
   achievements: Achievement[];
+  editorProjects: EditorProject[];
   lastActiveDate: string;
   activityDates: string[];
   weekStartDate: string;
 }
 
 export const STORAGE_KEY = "mini-ceo-state-v1";
-export const DEMO_STORAGE_KEY = "mini-ceo-demo-state-v1";
+export const DEMO_STORAGE_KEY = "mini-ceo-demo-state-v2";
+export const DEMO_MISSED_DAYS = 3;
 export const MAX_PRIVATE_FILE_BYTES = 100 * 1024 * 1024;
 export const DAYS = [
   "Monday",
@@ -175,7 +206,7 @@ export function weekStartKey(date = new Date()) {
 export function createEmptyState(now = new Date()): MiniCeoState {
   const today = localDateKey(now);
   return {
-    version: 2,
+    version: 3,
     onboardingComplete: false,
     profile: {
       ...DEFAULT_PROFILE,
@@ -193,6 +224,7 @@ export function createEmptyState(now = new Date()): MiniCeoState {
     bossApproval: 50,
     publishedThisWeek: 0,
     achievements: [],
+    editorProjects: [],
     lastActiveDate: today,
     activityDates: [],
     weekStartDate: weekStartKey(now),
@@ -202,27 +234,24 @@ export function createEmptyState(now = new Date()): MiniCeoState {
 export const EMPTY_STATE: MiniCeoState = createEmptyState();
 
 export function createDemoState(now = new Date()): MiniCeoState {
-  const today = localDateKey(now);
   const currentWeek = weekStartKey(now);
   const weekStart = dateFromKey(currentWeek);
   const monday = localDateKey(weekStart);
   const tuesday = localDateKey(addDays(weekStart, 1));
   const wednesday = localDateKey(addDays(weekStart, 2));
-  const activeDue = new Date(now.getTime() + 90 * 60 * 1000);
-  const activeDate = localDateKey(activeDue);
-  const activeTime = `${String(activeDue.getHours()).padStart(2, "0")}:${String(activeDue.getMinutes()).padStart(2, "0")}`;
-  const nextDate = localDateKey(addDays(activeDue, 1));
-  const publishDate = localDateKey(addDays(activeDue, 2));
+  const missedDue = new Date(now.getTime() - DEMO_MISSED_DAYS * 24 * 60 * 60 * 1000);
+  const missedDate = localDateKey(missedDue);
+  const missedTime = `${String(missedDue.getHours()).padStart(2, "0")}:${String(missedDue.getMinutes()).padStart(2, "0")}`;
   const completedAt = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
 
   const skills: ContentSkill[] = [
     {
       id: "demo_skill_breakdown",
-      name: "Fast AI Tool Breakdown",
-      hook: "Open with a costly misconception, then show the useful result immediately.",
-      pacing: "Proof by second 6, demonstration by second 15, takeaway by second 32",
-      tone: "Direct, curious, practical, and lightly skeptical",
-      visualFormat: "Face-to-camera with product screen recordings and two bold evidence cutaways",
+      name: "Absurd AI Product Breakdown",
+      hook: "Open on the ridiculous product promise, then prove whether the machine actually works.",
+      pacing: "Product reveal by second 3, yard test by second 12, verdict by second 32",
+      tone: "Fast, skeptical, visual, and funny without losing the useful verdict",
+      visualFormat: "Face to camera with a backyard test, close product shots, and one undeniable result",
       length: "35-45 seconds",
       examples: 4,
       confidence: 88,
@@ -243,10 +272,10 @@ export function createDemoState(now = new Date()): MiniCeoState {
   const ideas: Idea[] = [
     {
       id: "demo_idea_agent",
-      title: "I gave an AI agent one hour to run my content workflow",
-      hook: "I stopped asking AI for ideas and gave it an actual job instead.",
-      angle: "Show the difference between a chatbot prompt and an agent that plans, researches, and hands back a usable production brief.",
-      topic: "AI tools",
+      title: "I tested the AI dog pooper scooper so you do not have to",
+      hook: "This robot says it can find and scoop dog poop before you step in it. I gave it one disgusting afternoon.",
+      angle: "Test the product in a real yard, show every miss, and decide whether the AI is useful or just an expensive rolling trash can.",
+      topic: "weird AI products",
       source: "boss",
       status: "approved",
       skillId: "demo_skill_breakdown",
@@ -327,12 +356,12 @@ export function createDemoState(now = new Date()): MiniCeoState {
     createdAt: completedAt,
   };
   const tasks: CreatorTask[] = [
-    task("demo_task_research", "demo_idea_agent", "research", "Research the claim", "Collect three examples that show the difference between a chat response and an agent completing a workflow.", monday, "09:30", 25, "done", doneEvidence),
-    task("demo_task_script", "demo_idea_agent", "script", "Lock the hook and script", "Choose the strongest hook and tighten the demonstration into a 40-second story.", tuesday, "10:00", 35, "done", doneEvidence),
-    task("demo_task_plan", "demo_idea_agent", "production", "Build the shot plan", "Prepare the desk setup, product screen recording, before-and-after frame, and final call to action.", wednesday, "14:00", 15, "done", doneEvidence),
-    task("demo_task_shoot", "demo_idea_agent", "shoot", "Shoot the AI agent workflow video", "Record the A-roll first, then capture the agent handoff and three proof shots. Do not start editing yet.", activeDate, activeTime, 40, "active", undefined, activeDue.toISOString()),
-    task("demo_task_edit", "demo_idea_agent", "edit", "Finish the edit", "Cut dead air, make the result visible in the first three seconds, add captions, and export the final.", nextDate, "14:00", 50, "queued"),
-    task("demo_task_publish", "demo_idea_agent", "publish", "Publish and send the link", "Post to TikTok, Instagram Reels, and YouTube Shorts, then save the public link.", publishDate, "17:30", 10, "queued"),
+    task("demo_task_research", "demo_idea_agent", "research", "Research the AI scooper claims", "Verify what the machine claims to detect, how it navigates a yard, and what the manufacturer does not promise.", monday, "09:30", 25, "done", doneEvidence),
+    task("demo_task_script", "demo_idea_agent", "script", "Lock the dog poop test hook", "Turn the grossest product claim into a sharp opening and a simple pass or fail test.", tuesday, "10:00", 35, "done", doneEvidence),
+    task("demo_task_plan", "demo_idea_agent", "production", "Build the backyard shot plan", "Prepare the product closeups, yard test, miss counter, cleanup gloves, and final verdict frame.", wednesday, "14:00", 15, "done", doneEvidence),
+    task("demo_task_shoot", "demo_idea_agent", "shoot", "Shoot the AI dog pooper scooper test", "Record the full yard test and make every successful scoop and embarrassing miss visible.", wednesday, "15:00", 40, "done", doneEvidence),
+    task("demo_task_edit", "demo_idea_agent", "edit", "Finish the AI scooper edit", "Open on the product in motion, cut dead air, add the miss counter, captions, and the final verdict.", wednesday, "17:00", 50, "done", doneEvidence),
+    task("demo_task_publish", "demo_idea_agent", "publish", "Publish the AI dog pooper scooper video", "The edit is finished. Post it to TikTok, Instagram Reels, and YouTube Shorts, then send the public link.", missedDate, missedTime, 10, "active", undefined, missedDue.toISOString()),
     task("demo_calendar_research", "demo_idea_calendar", "research", "Find the workflow proof", "Pull the weekly planning screenshot and document the decisions the new system removed.", monday, "11:00", 20, "done", doneEvidence),
     task("demo_calendar_script", "demo_idea_calendar", "script", "Write the before-and-after story", "Turn the chaotic week into a tight problem, switch, system, and result sequence.", monday, "14:30", 30, "done", doneEvidence),
     task("demo_calendar_shoot", "demo_idea_calendar", "shoot", "Shoot the creator system demo", "Capture the desk B-roll and the calendar transformation.", tuesday, "13:00", 35, "done", doneEvidence),
@@ -345,18 +374,18 @@ export function createDemoState(now = new Date()): MiniCeoState {
   ];
 
   return {
-    version: 2,
+    version: 3,
     onboardingComplete: true,
     profile: {
       name: "Alex",
-      goal: "Make AI tools and creator systems practical for independent creators.",
+      goal: "Turn weird AI products into useful and funny short form reviews.",
       platforms: ["TikTok", "Instagram Reels", "YouTube Shorts"],
       videosPerWeek: 3,
-      topics: ["AI tools", "creator systems", "content strategy"],
+      topics: ["weird AI products", "creator systems", "content strategy"],
       scheduleStyle: "batch",
       workDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-      bossMode: "serious",
-      quietHours: { start: "21:00", end: "08:00" },
+      bossMode: "unhinged",
+      quietHours: { start: "00:00", end: "00:00" },
     },
     references: [
       {
@@ -377,9 +406,9 @@ export function createDemoState(now = new Date()): MiniCeoState {
     skills,
     ideas,
     tasks,
-    streak: 4,
-    weeklyScore: 86,
-    bossApproval: 91,
+    streak: 0,
+    weeklyScore: 64,
+    bossApproval: 31,
     publishedThisWeek: 1,
     achievements: [
       {
@@ -390,8 +419,8 @@ export function createDemoState(now = new Date()): MiniCeoState {
       },
       {
         id: "demo_achievement_streak",
-        title: "Four-day streak",
-        detail: "Moved a real content project forward four days in a row.",
+        title: "Former four-day streak",
+        detail: "Moved a real content project forward four days in a row before missing this publish deadline.",
         unlockedAt: completedAt,
       },
       {
@@ -401,8 +430,29 @@ export function createDemoState(now = new Date()): MiniCeoState {
         unlockedAt: completedAt,
       },
     ],
-    lastActiveDate: today,
-    activityDates: Array.from({ length: 4 }, (_, index) => localDateKey(addDays(now, -index))).sort(),
+    editorProjects: [
+      {
+        id: "demo_editor_project_launch",
+        editorId: "noa-mensah",
+        editorName: "Noa Mensah",
+        editorStudio: "Loop Assembly",
+        title: "Mini CEO product launch cut",
+        deliverable: "Motion graphics explainer",
+        budget: "$175-$240",
+        deadline: localDateKey(addDays(now, 4)),
+        brief: "Turn the product walkthrough into a concise launch video with clear motion callouts, captions, and a strong before-and-after moment.",
+        referenceUrl: "https://example.com/mini-ceo-launch-brief",
+        status: "delivered",
+        deliveryUrl: "https://example.com/mini-ceo-first-cut",
+        deliveryNote: "First cut is ready with the product reveal moved into the opening five seconds.",
+        revisionNote: "",
+        createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString(),
+        approvedAt: "",
+      },
+    ],
+    lastActiveDate: localDateKey(addDays(now, -DEMO_MISSED_DAYS)),
+    activityDates: Array.from({ length: 3 }, (_, index) => localDateKey(addDays(now, -(DEMO_MISSED_DAYS + index + 1)))).sort(),
     weekStartDate: currentWeek,
   };
 }
@@ -681,10 +731,69 @@ function migrateActivityDates(
   ).sort();
 }
 
-type StoredState = Partial<Omit<MiniCeoState, "profile" | "tasks">> & {
+type StoredState = Partial<Omit<MiniCeoState, "profile" | "tasks" | "editorProjects">> & {
   profile?: Partial<CreatorProfile>;
   tasks?: Array<Partial<CreatorTask>>;
+  editorProjects?: Array<Partial<EditorProject>>;
 };
+
+const EDITOR_PROJECT_STATUSES: EditorProjectStatus[] = [
+  "requested",
+  "accepted",
+  "delivered",
+  "changes_requested",
+  "approved",
+  "cancelled",
+];
+
+function migrateEditorProjects(value: unknown): EditorProject[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const project = entry as Partial<EditorProject>;
+    if (
+      typeof project.id !== "string" ||
+      typeof project.editorId !== "string" ||
+      typeof project.editorName !== "string" ||
+      typeof project.title !== "string" ||
+      typeof project.brief !== "string"
+    ) {
+      return [];
+    }
+    const status = EDITOR_PROJECT_STATUSES.includes(project.status as EditorProjectStatus)
+      ? (project.status as EditorProjectStatus)
+      : "requested";
+    const createdAt =
+      typeof project.createdAt === "string" && !Number.isNaN(new Date(project.createdAt).getTime())
+        ? project.createdAt
+        : new Date().toISOString();
+    return [{
+      id: project.id,
+      editorId: project.editorId,
+      editorName: project.editorName,
+      editorStudio: typeof project.editorStudio === "string" ? project.editorStudio : "Independent editor",
+      title: project.title,
+      deliverable: typeof project.deliverable === "string" ? project.deliverable : "Video edit",
+      budget: typeof project.budget === "string" ? project.budget : "Budget not set",
+      deadline: isDateKey(project.deadline) ? project.deadline : "",
+      brief: project.brief,
+      referenceUrl: typeof project.referenceUrl === "string" ? project.referenceUrl : "",
+      status,
+      deliveryUrl: typeof project.deliveryUrl === "string" ? project.deliveryUrl : "",
+      deliveryNote: typeof project.deliveryNote === "string" ? project.deliveryNote : "",
+      revisionNote: typeof project.revisionNote === "string" ? project.revisionNote : "",
+      createdAt,
+      updatedAt:
+        typeof project.updatedAt === "string" && !Number.isNaN(new Date(project.updatedAt).getTime())
+          ? project.updatedAt
+          : createdAt,
+      approvedAt:
+        typeof project.approvedAt === "string" && !Number.isNaN(new Date(project.approvedAt).getTime())
+          ? project.approvedAt
+          : "",
+    }];
+  });
+}
 
 export function migrateMiniCeoState(input: unknown, now = new Date()): MiniCeoState {
   const base = createEmptyState(now);
@@ -771,13 +880,14 @@ export function migrateMiniCeoState(input: unknown, now = new Date()): MiniCeoSt
   const migrated: MiniCeoState = {
     ...base,
     ...raw,
-    version: 2,
+    version: 3,
     profile,
     references: Array.isArray(raw.references) ? raw.references : [],
     skills,
     ideas,
     tasks: ensureSingleActiveTask(tasks),
     achievements: Array.isArray(raw.achievements) ? raw.achievements : [],
+    editorProjects: migrateEditorProjects(raw.editorProjects),
     lastActiveDate,
     activityDates,
     weekStartDate: storedWeek,
@@ -888,9 +998,14 @@ export function getAccountabilityReminder(
   const overdueMinutes = Math.abs(minutesUntilDue);
   const interval = profile.bossMode === "coach" ? 360 : profile.bossMode === "serious" ? 180 : 60;
   const checkpoint = Math.floor(overdueMinutes / interval);
+  const overdueDays = Math.floor(overdueMinutes / (24 * 60));
   return {
     key: `${task.id}:missed:${checkpoint}`,
-    label: checkpoint ? `Missed deadline · check ${checkpoint + 1}` : "Missed deadline",
+    label: overdueDays > 0
+      ? `${overdueDays} day${overdueDays === 1 ? "" : "s"} overdue`
+      : checkpoint
+        ? `Missed deadline · check ${checkpoint + 1}`
+        : "Missed deadline",
     message: bossLine(profile.bossMode, task, "missed"),
     cadence: `Follow-up refreshes every ${interval >= 60 ? `${interval / 60} hour${interval === 60 ? "" : "s"}` : `${interval} minutes`} while Mini CEO is open.`,
     urgency: "missed",
