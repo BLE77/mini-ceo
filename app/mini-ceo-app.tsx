@@ -54,6 +54,7 @@ import {
   BossMode,
   CreatorTask,
   DAYS,
+  DEMO_STORAGE_KEY,
   EMPTY_STATE,
   Evidence,
   Idea,
@@ -68,6 +69,7 @@ import {
   calculateCreatorStreak,
   calculateWeeklyScore,
   clearPrivateFiles,
+  createDemoState,
   createEmptyState,
   createSkill,
   ensureSingleActiveTask,
@@ -86,6 +88,26 @@ type AssistantMessage = {
   id: string;
   role: "boss" | "creator";
   text: string;
+};
+
+type VoiceConnection = {
+  status: "checking" | "elevenlabs" | "device" | "error";
+  selectedVoice?: string;
+};
+
+type BrainConnection = {
+  status: "checking" | "openrouter" | "local" | "error";
+  model?: string;
+};
+
+type CloudConnection = {
+  status: "checking" | "synced" | "local" | "error";
+  email?: string;
+  name?: string;
+};
+
+type PushConnection = {
+  status: "checking" | "ready" | "subscribed" | "needs-install" | "unsupported" | "error";
 };
 
 type InstallPromptEvent = Event & {
@@ -149,6 +171,13 @@ function progressForTasks(tasks: CreatorTask[]) {
   return Math.round(
     (tasks.filter((task) => task.status === "done").length / tasks.length) * 100,
   );
+}
+
+function urlBase64ToUint8Array(value: string) {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  return Uint8Array.from(raw, (character) => character.charCodeAt(0));
 }
 
 function SectionTitle({
@@ -232,6 +261,7 @@ function AppButton({
 export default function MiniCeoApp() {
   const [state, setState] = useState<MiniCeoState>(EMPTY_STATE);
   const [hydrated, setHydrated] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [view, setView] = useState<AppView>("today");
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [topicDraft, setTopicDraft] = useState("");
@@ -253,6 +283,11 @@ export default function MiniCeoApp() {
   ]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [voiceConnection, setVoiceConnection] = useState<VoiceConnection>({ status: "checking" });
+  const [brainConnection, setBrainConnection] = useState<BrainConnection>({ status: "checking" });
+  const [cloudConnection, setCloudConnection] = useState<CloudConnection>({ status: "checking" });
+  const [cloudReady, setCloudReady] = useState(false);
+  const [pushConnection, setPushConnection] = useState<PushConnection>({ status: "checking" });
   const [isListening, setIsListening] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<
     NotificationPermission | "unsupported"
@@ -261,17 +296,28 @@ export default function MiniCeoApp() {
   const [clock, setClock] = useState(() => new Date());
   const recognitionRef = useRef<RecognitionInstance | null>(null);
   const lastReminderKeyRef = useRef("");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const voiceRequestRef = useRef<AbortController | null>(null);
+  const stateRef = useRef(state);
 
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
       try {
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const demoMode = new URLSearchParams(window.location.search).get("demo") === "1";
+        const storageKey = demoMode ? DEMO_STORAGE_KEY : STORAGE_KEY;
+        const saved = localStorage.getItem(storageKey);
+        setIsDemoMode(demoMode);
+        if (demoMode) {
+          setCloudConnection({ status: "local" });
+          setCloudReady(true);
+        }
         if (saved) {
           setState(migrateMiniCeoState(JSON.parse(saved)));
         } else {
-          setState(createEmptyState());
+          setState(demoMode ? createDemoState() : createEmptyState());
         }
       } catch {
         setToast("Your saved workspace could not be read. A clean workspace is open.");
@@ -303,8 +349,157 @@ export default function MiniCeoApp() {
 
   useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [hydrated, state]);
+    localStorage.setItem(
+      isDemoMode ? DEMO_STORAGE_KEY : STORAGE_KEY,
+      JSON.stringify(state),
+    );
+  }, [hydrated, isDemoMode, state]);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (isDemoMode) return;
+    let cancelled = false;
+
+    const connectCloud = async () => {
+      try {
+        const response = await fetch("/api/sync", { cache: "no-store" });
+        if (response.status === 401) {
+          if (!cancelled) setCloudConnection({ status: "local" });
+          return;
+        }
+        if (!response.ok) throw new Error("Cloud unavailable");
+        const data = (await response.json()) as {
+          state?: MiniCeoState | null;
+          user?: { email?: string | null; name?: string | null };
+        };
+        if (cancelled) return;
+
+        if (data.state) {
+          const cloudState = migrateMiniCeoState(data.state);
+          stateRef.current = cloudState;
+          setState(cloudState);
+        } else {
+          const saveResponse = await fetch("/api/sync", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ version: 1, state: stateRef.current }),
+          });
+          if (!saveResponse.ok) throw new Error("Initial cloud save failed");
+        }
+
+        if (!cancelled) {
+          setCloudConnection({
+            status: "synced",
+            email: data.user?.email || undefined,
+            name: data.user?.name || undefined,
+          });
+        }
+      } catch {
+        if (!cancelled) setCloudConnection({ status: "error" });
+      } finally {
+        if (!cancelled) setCloudReady(true);
+      }
+    };
+
+    void connectCloud();
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, isDemoMode]);
+
+  useEffect(() => {
+    if (!hydrated || isDemoMode || !cloudReady || cloudConnection.status === "local") return;
+    const timeout = window.setTimeout(() => {
+      void fetch("/api/sync", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version: 1, state }),
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error("Cloud save failed");
+          setCloudConnection((current) => ({ ...current, status: "synced" }));
+        })
+        .catch(() => setCloudConnection((current) => ({ ...current, status: "error" })));
+    }, 900);
+    return () => window.clearTimeout(timeout);
+  }, [cloudConnection.status, cloudReady, hydrated, isDemoMode, state]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetch("/api/voice", { cache: "no-store" })
+      .then(async (response) => {
+        const data = (await response.json()) as {
+          connected?: boolean;
+          selectedVoice?: string | null;
+        };
+        if (cancelled) return;
+        if (response.ok && data.connected) {
+          setVoiceConnection({
+            status: "elevenlabs",
+            selectedVoice: data.selectedVoice || "ElevenLabs voice",
+          });
+          return;
+        }
+        setVoiceConnection({
+          status: "speechSynthesis" in window ? "device" : "error",
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setVoiceConnection({
+            status: "speechSynthesis" in window ? "device" : "error",
+          });
+        }
+      });
+
+    void fetch("/api/assistant", { cache: "no-store" })
+      .then(async (response) => {
+        const data = (await response.json()) as {
+          connected?: boolean;
+          configured?: boolean;
+          model?: string | null;
+        };
+        if (cancelled) return;
+        if (response.ok && data.connected) {
+          setBrainConnection({ status: "openrouter", model: data.model || undefined });
+          return;
+        }
+        setBrainConnection({ status: data.configured ? "error" : "local", model: data.model || undefined });
+      })
+      .catch(() => {
+        if (!cancelled) setBrainConnection({ status: "error" });
+      });
+
+    void fetch("/api/push", { cache: "no-store" })
+      .then(async (response) => {
+        if (response.status === 401) {
+          if (!cancelled) setPushConnection({ status: "ready" });
+          return;
+        }
+        const data = (await response.json()) as {
+          configured?: boolean;
+          subscribed?: boolean;
+        };
+        if (cancelled) return;
+        if (!response.ok || !data.configured) {
+          setPushConnection({ status: "error" });
+          return;
+        }
+        setPushConnection({ status: data.subscribed ? "subscribed" : "ready" });
+      })
+      .catch(() => {
+        if (!cancelled) setPushConnection({ status: "error" });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -371,9 +566,24 @@ export default function MiniCeoApp() {
     }));
   };
 
-  const speak = useCallback(
+  const stopSpeaking = useCallback(() => {
+    voiceRequestRef.current?.abort();
+    voiceRequestRef.current = null;
+    audioRef.current?.pause();
+    audioRef.current = null;
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    audioUrlRef.current = null;
+    window.speechSynthesis?.cancel();
+    setIsSpeaking(false);
+  }, []);
+
+  const speakWithDevice = useCallback(
     (text: string) => {
-      if (!voiceEnabled || !("speechSynthesis" in window)) return;
+      if (!("speechSynthesis" in window)) {
+        setVoiceConnection({ status: "error" });
+        setIsSpeaking(false);
+        return;
+      }
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       const voices = window.speechSynthesis.getVoices();
@@ -390,36 +600,116 @@ export default function MiniCeoApp() {
       utterance.onerror = () => setIsSpeaking(false);
       window.speechSynthesis.speak(utterance);
     },
-    [bossMode, voiceEnabled],
+    [bossMode],
   );
 
-  const stopSpeaking = () => {
-    window.speechSynthesis?.cancel();
-    setIsSpeaking(false);
-  };
+  const speak = useCallback(
+    (text: string) => {
+      if (!voiceEnabled) return;
+      stopSpeaking();
+
+      const controller = new AbortController();
+      voiceRequestRef.current = controller;
+      setIsSpeaking(true);
+
+      void fetch("/api/voice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text.slice(0, 900), bossMode }),
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error("ElevenLabs unavailable");
+          const blob = await response.blob();
+          if (controller.signal.aborted) return;
+
+          const voiceName = decodeURIComponent(
+            response.headers.get("X-Mini-CEO-Voice") || "ElevenLabs voice",
+          );
+          const audioUrl = URL.createObjectURL(blob);
+          const audio = new Audio(audioUrl);
+          audioRef.current = audio;
+          audioUrlRef.current = audioUrl;
+          audio.onended = stopSpeaking;
+          audio.onerror = () => {
+            stopSpeaking();
+            speakWithDevice(text);
+          };
+          setVoiceConnection({ status: "elevenlabs", selectedVoice: voiceName });
+          await audio.play();
+        })
+        .catch(() => {
+          if (controller.signal.aborted) return;
+          stopSpeaking();
+          setVoiceConnection({ status: "speechSynthesis" in window ? "device" : "error" });
+          speakWithDevice(text);
+        });
+    },
+    [bossMode, speakWithDevice, stopSpeaking, voiceEnabled],
+  );
+
+  useEffect(() => stopSpeaking, [stopSpeaking]);
 
   const showToast = (message: string) => setToast(message);
 
   const requestNotifications = async () => {
-    if (!("Notification" in window)) {
-      showToast("This browser does not support notifications.");
+    if (!("serviceWorker" in navigator) || !("Notification" in window)) {
+      setPushConnection({ status: "needs-install" });
+      showToast("On iPhone, add Mini CEO to your Home Screen first, then enable notifications inside the app.");
       return;
     }
-    const result = await Notification.requestPermission();
-    setNotificationPermission(result);
-    if (result === "granted") {
-      if (reminder?.quiet) {
-        showToast("Browser notifications are enabled. Quiet hours are active, so no preview was sent.");
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      if (!("pushManager" in registration)) {
+        setPushConnection({ status: "unsupported" });
+        showToast("This browser does not support Web Push.");
         return;
       }
-      const registration = await navigator.serviceWorker.ready;
-      await registration.showNotification("Mini CEO is on duty", {
-        body: reminder?.message || bossLine(bossMode, activeTask, "task"),
-        icon: "/icon-192.png",
-        badge: "/icon-192.png",
-        tag: "mini-ceo-preview",
+
+      const result = await Notification.requestPermission();
+      setNotificationPermission(result);
+      if (result !== "granted") {
+        showToast("Notifications were not enabled. You can change this in your device settings.");
+        return;
+      }
+
+      const statusResponse = await fetch("/api/push", { cache: "no-store" });
+      const status = (await statusResponse.json()) as {
+        configured?: boolean;
+        publicKey?: string | null;
+      };
+      if (!statusResponse.ok || !status.configured || !status.publicKey) {
+        throw new Error("Push backend unavailable");
+      }
+
+      const existing = await registration.pushManager.getSubscription();
+      const subscription =
+        existing ||
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(status.publicKey),
+        }));
+      const saveResponse = await fetch("/api/push", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(subscription.toJSON()),
       });
-      showToast("Browser preview sent. The reminder ladder runs while Mini CEO is open.");
+      if (!saveResponse.ok) throw new Error("Subscription save failed");
+
+      const testResponse = await fetch("/api/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          body: reminder?.message || bossLine(bossMode, activeTask, "task"),
+        }),
+      });
+      if (!testResponse.ok) throw new Error("Test push failed");
+      setPushConnection({ status: "subscribed" });
+      showToast("Real Web Push is connected. A closed-app test notification was sent.");
+    } catch {
+      setPushConnection({ status: "error" });
+      showToast("Web Push could not connect yet. Your workspace and in-app reminders are still safe.");
     }
   };
 
@@ -756,7 +1046,16 @@ export default function MiniCeoApp() {
           }),
         });
         if (!response.ok) throw new Error("Assistant unavailable");
-        const data = (await response.json()) as { reply: string; provider: string };
+        const data = (await response.json()) as {
+          reply: string;
+          provider: string;
+          model?: string;
+        };
+        setBrainConnection(
+          data.provider === "openrouter"
+            ? { status: "openrouter", model: data.model }
+            : { status: "local" },
+        );
         const reply: AssistantMessage = {
           id: makeId("message"),
           role: "boss",
@@ -813,7 +1112,18 @@ export default function MiniCeoApp() {
   };
 
   const resetWorkspace = async () => {
+    if (isDemoMode) {
+      localStorage.removeItem(DEMO_STORAGE_KEY);
+      setState(createDemoState());
+      setView("today");
+      setAssistantOpen(false);
+      setProofTask(null);
+      showToast("Demo story reset. You are back at the active shoot assignment.");
+      return;
+    }
+
     localStorage.removeItem(STORAGE_KEY);
+    await fetch("/api/sync", { method: "DELETE" }).catch(() => undefined);
     let filesCleared = true;
     try {
       await clearPrivateFiles();
@@ -828,6 +1138,18 @@ export default function MiniCeoApp() {
         ? "Workspace and private device files reset."
         : "Workspace reset, but this browser could not clear one private file store.",
     );
+  };
+
+  const launchDemo = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("demo", "1");
+    window.location.href = url.toString();
+  };
+
+  const exitDemo = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("demo");
+    window.location.href = url.toString();
   };
 
   const exportWorkspace = () => {
@@ -872,6 +1194,7 @@ export default function MiniCeoApp() {
         rejectIdea={rejectIdea}
         finish={finishOnboarding}
         installApp={installApp}
+        launchDemo={launchDemo}
         speak={speak}
         isSpeaking={isSpeaking}
         stopSpeaking={stopSpeaking}
@@ -880,16 +1203,17 @@ export default function MiniCeoApp() {
   }
 
   return (
-    <main className={`app-shell mode-${bossMode}`}>
+    <main className={`app-shell mode-${bossMode} ${isDemoMode ? "is-demo-mode" : ""}`}>
       <ClassicMacMenuBar
-        section="Connections"
+        section={isDemoMode ? "Demo mode" : "Connections"}
         onBrand={() => setView("today")}
-        sectionAction={() => setView("connections")}
+        sectionAction={isDemoMode ? resetWorkspace : () => setView("connections")}
         commands={[
           { label: "Today", onClick: () => setView("today"), active: view === "today" },
           { label: "Ideas", onClick: () => setView("ideas"), active: view === "ideas" },
           { label: "Plan", onClick: () => setView("schedule"), active: view === "schedule" },
           { label: "Boss", onClick: () => setAssistantOpen(true), active: assistantOpen },
+          ...(isDemoMode ? [{ label: "Exit demo", onClick: exitDemo }] : []),
         ]}
       />
       <div className="desktop-rail">
@@ -923,6 +1247,17 @@ export default function MiniCeoApp() {
             {activeTask && <span className="notification-dot" />}
           </button>
         </header>
+
+        {isDemoMode && (
+          <div className="demo-mode-ribbon" role="status">
+            <span><Sparkle size={15} weight="fill" /> Presentation workspace</span>
+            <p>Safe sample data · your real workspace stays untouched</p>
+            <div>
+              <button type="button" onClick={resetWorkspace}>Reset story</button>
+              <button type="button" onClick={exitDemo}>Exit</button>
+            </div>
+          </div>
+        )}
 
         <AnimatePresence mode="wait">
           <motion.div
@@ -977,9 +1312,11 @@ export default function MiniCeoApp() {
                 requestNotifications={requestNotifications}
                 notificationPermission={notificationPermission}
                 voiceEnabled={voiceEnabled}
+                voiceConnection={voiceConnection}
                 setVoiceEnabled={setVoiceEnabled}
                 installApp={installApp}
                 resetWorkspace={resetWorkspace}
+                isDemoMode={isDemoMode}
                 openConnections={() => setView("connections")}
               />
             )}
@@ -991,6 +1328,10 @@ export default function MiniCeoApp() {
                 openAssistant={() => setAssistantOpen(true)}
                 testVoice={() => speak("Mini CEO voice check. I am on duty, and your next assignment is waiting.")}
                 voiceEnabled={voiceEnabled}
+                voiceConnection={voiceConnection}
+                brainConnection={brainConnection}
+                cloudConnection={cloudConnection}
+                pushConnection={pushConnection}
                 exportWorkspace={exportWorkspace}
               />
             )}
@@ -1091,6 +1432,7 @@ function Onboarding({
   rejectIdea,
   finish,
   installApp,
+  launchDemo,
   speak,
   isSpeaking,
   stopSpeaking,
@@ -1109,6 +1451,7 @@ function Onboarding({
   rejectIdea: (id: string) => void;
   finish: () => void;
   installApp: () => void;
+  launchDemo: () => void;
   speak: (text: string) => void;
   isSpeaking: boolean;
   stopSpeaking: () => void;
@@ -1137,6 +1480,9 @@ function Onboarding({
       <header className="onboarding-header">
         <span className="mac-window-box" aria-hidden="true"><i /></span>
         <div className="mini-wordmark"><span>MC</span> Mini CEO</div>
+        <button type="button" className="onboarding-demo-button" onClick={launchDemo}>
+          <Play size={14} weight="fill" /> Try the live demo
+        </button>
         <div className="onboarding-progress" aria-label={`Onboarding step ${step + 1} of 6`}>
           {Array.from({ length: 6 }).map((_, index) => (
             <span key={index} className={index <= step ? "is-filled" : ""} />
@@ -1810,9 +2156,11 @@ function ReviewView({
   requestNotifications,
   notificationPermission,
   voiceEnabled,
+  voiceConnection,
   setVoiceEnabled,
   installApp,
   resetWorkspace,
+  isDemoMode,
   openConnections,
 }: {
   state: MiniCeoState;
@@ -1820,9 +2168,11 @@ function ReviewView({
   requestNotifications: () => void;
   notificationPermission: NotificationPermission | "unsupported";
   voiceEnabled: boolean;
+  voiceConnection: VoiceConnection;
   setVoiceEnabled: (value: boolean) => void;
   installApp: () => void;
   resetWorkspace: () => void;
+  isDemoMode: boolean;
   openConnections: () => void;
 }) {
   const grade = gradeForScore(state.weeklyScore);
@@ -1865,7 +2215,7 @@ function ReviewView({
           </select>
         </div>
         <button className="setting-row" onClick={requestNotifications}>
-          <div><Bell size={19} /><span><strong>Browser notification preview</strong><small>{notificationPermission === "granted" ? "Enabled; reminders run while the app is open" : "Optional preview; in-app reminders need no permission"}</small></span></div>
+          <div><Bell size={19} /><span><strong>iPhone Web Push</strong><small>{notificationPermission === "granted" ? "Permission enabled; tap to send a server test" : "Install to Home Screen, then enable closed-app notifications"}</small></span></div>
           <CaretRight size={18} />
         </button>
         <div className="setting-row">
@@ -1886,7 +2236,7 @@ function ReviewView({
           </div>
         </div>
         <button className="setting-row" onClick={() => setVoiceEnabled(!voiceEnabled)}>
-          <div>{voiceEnabled ? <SpeakerHigh size={19} /> : <SpeakerSlash size={19} />}<span><strong>Mini CEO voice</strong><small>{voiceEnabled ? "Replies can speak out loud" : "Voice replies are muted"}</small></span></div>
+          <div>{voiceEnabled ? <SpeakerHigh size={19} /> : <SpeakerSlash size={19} />}<span><strong>Mini CEO voice</strong><small>{!voiceEnabled ? "Voice replies are muted" : voiceConnection.status === "elevenlabs" ? `${voiceConnection.selectedVoice || "ElevenLabs"} is the hosted character voice` : "Device voice fallback is active"}</small></span></div>
           <span className={`toggle ${voiceEnabled ? "is-on" : ""}`}><i /></span>
         </button>
         <button className="setting-row" onClick={installApp}>
@@ -1899,7 +2249,9 @@ function ReviewView({
         </button>
       </section>
 
-      <button className="reset-link" onClick={resetWorkspace}>Reset demo workspace</button>
+      <button className="reset-link" onClick={resetWorkspace}>
+        {isDemoMode ? "Reset demo story" : "Reset workspace"}
+      </button>
     </div>
   );
 }
@@ -1911,6 +2263,10 @@ function ConnectionsView({
   openAssistant,
   testVoice,
   voiceEnabled,
+  voiceConnection,
+  brainConnection,
+  cloudConnection,
+  pushConnection,
   exportWorkspace,
 }: {
   notificationPermission: NotificationPermission | "unsupported";
@@ -1919,10 +2275,54 @@ function ConnectionsView({
   openAssistant: () => void;
   testVoice: () => void;
   voiceEnabled: boolean;
+  voiceConnection: VoiceConnection;
+  brainConnection: BrainConnection;
+  cloudConnection: CloudConnection;
+  pushConnection: PushConnection;
   exportWorkspace: () => void;
 }) {
   const notificationActive = notificationPermission === "granted";
-  const voiceAvailable = typeof window !== "undefined" && "speechSynthesis" in window;
+  const deviceVoiceAvailable = typeof window !== "undefined" && "speechSynthesis" in window;
+  const voiceAvailable = voiceConnection.status === "elevenlabs" || deviceVoiceAvailable;
+  const voiceStatus = !voiceEnabled
+    ? "Muted"
+    : voiceConnection.status === "checking"
+      ? "Checking"
+      : voiceConnection.status === "elevenlabs"
+        ? "Active"
+        : voiceConnection.status === "device"
+          ? "Device fallback"
+          : "Unavailable";
+  const voiceDetail = voiceConnection.status === "elevenlabs"
+    ? `${voiceConnection.selectedVoice || "ElevenLabs"} is selected as the consistent Mini CEO character voice.`
+    : voiceConnection.status === "checking"
+      ? "Mini CEO is verifying the hosted ElevenLabs connection."
+      : "The hosted voice is unavailable, so Mini CEO will use a voice installed on this device when possible.";
+  const brainStatus = brainConnection.status === "openrouter"
+    ? "Active"
+    : brainConnection.status === "checking"
+      ? "Checking"
+      : brainConnection.status === "local"
+        ? "Local fallback"
+        : "Connection error";
+  const cloudStatus = cloudConnection.status === "synced"
+    ? "Synced"
+    : cloudConnection.status === "checking"
+      ? "Checking"
+      : cloudConnection.status === "local"
+        ? "Device only"
+        : "Sync error";
+  const pushStatus = pushConnection.status === "subscribed"
+    ? "Subscribed"
+    : pushConnection.status === "checking"
+      ? "Checking"
+      : pushConnection.status === "ready"
+        ? "Ready to enable"
+        : pushConnection.status === "needs-install"
+          ? "Install first"
+          : pushConnection.status === "unsupported"
+            ? "Unsupported"
+            : "Connection error";
 
   return (
     <div className="standard-view connections-view">
@@ -1936,17 +2336,17 @@ function ConnectionsView({
         <div className="connection-group-heading">
           <div>
             <p className="eyebrow">Working now</p>
-            <h3 id="working-now-title">Real device features</h3>
+            <h3 id="working-now-title">Live connections</h3>
           </div>
-          <span className="connection-summary">4 available</span>
+          <span className="connection-summary">Checked live</span>
         </div>
 
         <div className="connection-list">
           <article className="connection-row">
             <div className="connection-icon"><LockKey size={20} /></div>
             <div className="connection-copy">
-              <div><h4>Creator workspace</h4><span className="connection-badge is-device">On this device</span></div>
-              <p>Goals, ideas, tasks, streaks, and settings are saved in this browser. There is no account or cloud sync yet.</p>
+              <div><h4>Account and creator workspace</h4><span className={`connection-badge ${cloudConnection.status === "synced" ? "is-live" : cloudConnection.status === "checking" || cloudConnection.status === "local" ? "is-device" : "is-off"}`}>{cloudStatus}</span></div>
+              <p>{cloudConnection.status === "synced" ? `Goals, ideas, tasks, streaks, and settings sync to your private account${cloudConnection.email ? ` (${cloudConnection.email})` : ""}. Uploaded source files remain private to this device.` : "This browser keeps a local copy. Cloud sync becomes authoritative after private account authentication is available."}</p>
             </div>
             <AppButton variant="secondary" onClick={exportWorkspace}>Export backup</AppButton>
           </article>
@@ -1954,8 +2354,8 @@ function ConnectionsView({
           <article className="connection-row">
             <div className="connection-icon"><Brain size={20} /></div>
             <div className="connection-copy">
-              <div><h4>Mini CEO assistant</h4><span className="connection-badge is-live">Active</span></div>
-              <p>The local assistant can create hooks, scripts, outlines, research plans, checklists, and next steps from your workspace.</p>
+              <div><h4>OpenRouter boss brain</h4><span className={`connection-badge ${brainConnection.status === "openrouter" ? "is-live" : brainConnection.status === "checking" ? "is-device" : "is-off"}`}>{brainStatus}</span></div>
+              <p>{brainConnection.status === "openrouter" ? `${brainConnection.model || "The configured OpenRouter model"} writes the boss replies. Unhinged CEO can use comedic profanity without personal abuse.` : "The deterministic Mini CEO assistant remains available whenever OpenRouter cannot respond."}</p>
             </div>
             <AppButton variant="secondary" onClick={openAssistant}>Open boss</AppButton>
           </article>
@@ -1963,8 +2363,8 @@ function ConnectionsView({
           <article className="connection-row">
             <div className="connection-icon">{voiceEnabled ? <SpeakerHigh size={20} /> : <SpeakerSlash size={20} />}</div>
             <div className="connection-copy">
-              <div><h4>Device voice</h4><span className={`connection-badge ${voiceAvailable && voiceEnabled ? "is-live" : "is-off"}`}>{voiceAvailable && voiceEnabled ? "Active" : "Unavailable"}</span></div>
-              <p>Speech uses the voices already installed on this phone or computer. This is not a hosted character voice.</p>
+              <div><h4>ElevenLabs character voice</h4><span className={`connection-badge ${voiceConnection.status === "elevenlabs" && voiceEnabled ? "is-live" : voiceConnection.status === "checking" ? "is-device" : "is-off"}`}>{voiceStatus}</span></div>
+              <p>{voiceDetail}</p>
             </div>
             <AppButton variant="secondary" onClick={testVoice} disabled={!voiceAvailable || !voiceEnabled}>Test voice</AppButton>
           </article>
@@ -1972,8 +2372,8 @@ function ConnectionsView({
           <article className="connection-row">
             <div className="connection-icon"><Bell size={20} /></div>
             <div className="connection-copy">
-              <div><h4>Browser notification preview</h4><span className={`connection-badge ${notificationActive ? "is-live" : "is-device"}`}>{notificationActive ? "Permission on" : "Needs permission"}</span></div>
-              <p>Permission and previews are real. Scheduled reminders currently update only while Mini CEO is open.</p>
+              <div><h4>iPhone Web Push</h4><span className={`connection-badge ${pushConnection.status === "subscribed" ? "is-live" : pushConnection.status === "checking" || pushConnection.status === "ready" ? "is-device" : "is-off"}`}>{pushStatus}</span></div>
+              <p>{pushConnection.status === "subscribed" ? "This device has a real server-held push subscription, and notifications can arrive after the Home Screen app closes." : "Install Mini CEO to the iPhone Home Screen, then tap Enable to create a real push subscription and receive a server-sent test."}</p>
             </div>
             <AppButton variant="secondary" onClick={requestNotifications}>{notificationActive ? "Send test" : "Enable"}</AppButton>
           </article>
@@ -1993,28 +2393,10 @@ function ConnectionsView({
           <article className="connection-row">
             <div className="connection-icon"><LinkSimple size={20} /></div>
             <div className="connection-copy">
-              <div><h4>Accounts and cloud sync</h4><span className="connection-badge is-off">Not connected</span></div>
-              <p>Needed for sign-in, backups, and using the same workspace across an iPhone and computer.</p>
+              <div><h4>Automatic reminder dispatch</h4><span className="connection-badge is-off">Awaiting scheduler</span></div>
+              <p>The subscription, service worker, secure dispatch route, quiet hours, and reminder deduplication are built. A separate recurring trigger must call the private dispatch route.</p>
             </div>
-            <span className="connection-requirement">Database + authentication</span>
-          </article>
-
-          <article className="connection-row">
-            <div className="connection-icon"><MagicWand size={20} /></div>
-            <div className="connection-copy">
-              <div><h4>Hosted AI and character voice</h4><span className="connection-badge is-off">Not connected</span></div>
-              <p>Hermes or OpenAI would power deeper assistance. A voice provider would give the boss one consistent voice.</p>
-            </div>
-            <span className="connection-requirement">Provider keys required</span>
-          </article>
-
-          <article className="connection-row">
-            <div className="connection-icon"><BellRinging size={20} /></div>
-            <div className="connection-copy">
-              <div><h4>Closed-app reminders</h4><span className="connection-badge is-off">Not connected</span></div>
-              <p>Real iPhone reminders after the app closes need Web Push subscriptions and a backend scheduler.</p>
-            </div>
-            <span className="connection-requirement">Push worker required</span>
+            <span className="connection-requirement">External cron trigger required</span>
           </article>
 
           <article className="connection-row">

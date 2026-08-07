@@ -2,6 +2,7 @@
   "name": "Mini CEO - Your boss in your pocket",
   "short_name": "Mini CEO",
   "description": "A character-first creator operating system for consistent publishing.",
+  "id": "/",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#aaa7a1",

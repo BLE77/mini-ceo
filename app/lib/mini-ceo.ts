@@ -108,6 +108,7 @@ export interface MiniCeoState {
 }
 
 export const STORAGE_KEY = "mini-ceo-state-v1";
+export const DEMO_STORAGE_KEY = "mini-ceo-demo-state-v1";
 export const MAX_PRIVATE_FILE_BYTES = 100 * 1024 * 1024;
 export const DAYS = [
   "Monday",
@@ -192,6 +193,217 @@ export function createEmptyState(now = new Date()): MiniCeoState {
 }
 
 export const EMPTY_STATE: MiniCeoState = createEmptyState();
+
+export function createDemoState(now = new Date()): MiniCeoState {
+  const today = localDateKey(now);
+  const currentWeek = weekStartKey(now);
+  const weekStart = dateFromKey(currentWeek);
+  const monday = localDateKey(weekStart);
+  const tuesday = localDateKey(addDays(weekStart, 1));
+  const wednesday = localDateKey(addDays(weekStart, 2));
+  const activeDue = new Date(now.getTime() + 90 * 60 * 1000);
+  const activeDate = localDateKey(activeDue);
+  const activeTime = `${String(activeDue.getHours()).padStart(2, "0")}:${String(activeDue.getMinutes()).padStart(2, "0")}`;
+  const nextDate = localDateKey(addDays(activeDue, 1));
+  const publishDate = localDateKey(addDays(activeDue, 2));
+  const completedAt = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+
+  const skills: ContentSkill[] = [
+    {
+      id: "demo_skill_breakdown",
+      name: "Fast AI Tool Breakdown",
+      hook: "Open with a costly misconception, then show the useful result immediately.",
+      pacing: "Proof by second 6, demonstration by second 15, takeaway by second 32",
+      tone: "Direct, curious, practical, and lightly skeptical",
+      visualFormat: "Face-to-camera with product screen recordings and two bold evidence cutaways",
+      length: "35-45 seconds",
+      examples: 4,
+      confidence: 88,
+    },
+    {
+      id: "demo_skill_system",
+      name: "Creator System Before-and-After",
+      hook: "Contrast the chaotic default with one repeatable operating rule.",
+      pacing: "Problem, visual switch, three-step system, one challenge",
+      tone: "Calm authority with concise, actionable language",
+      visualFormat: "Desk B-roll, calendar overlays, and a clean before-and-after frame",
+      length: "30-40 seconds",
+      examples: 3,
+      confidence: 79,
+    },
+  ];
+
+  const ideas: Idea[] = [
+    {
+      id: "demo_idea_agent",
+      title: "I gave an AI agent one hour to run my content workflow",
+      hook: "I stopped asking AI for ideas and gave it an actual job instead.",
+      angle: "Show the difference between a chatbot prompt and an agent that plans, researches, and hands back a usable production brief.",
+      topic: "AI tools",
+      goalFit: 96,
+      source: "boss",
+      status: "approved",
+      skillId: "demo_skill_breakdown",
+    },
+    {
+      id: "demo_idea_calendar",
+      title: "The two-hour creator system that replaced my chaotic week",
+      hook: "Your content calendar is not the problem. The number of decisions inside it is.",
+      angle: "Demonstrate a weekly batching system that turns five open-ended projects into one clear next action.",
+      topic: "creator systems",
+      goalFit: 93,
+      source: "creator",
+      status: "approved",
+      skillId: "demo_skill_system",
+    },
+    {
+      id: "demo_idea_stack",
+      title: "Three AI tools that actually survived my workflow test",
+      hook: "I deleted eleven AI subscriptions. These three earned their spot.",
+      angle: "Use a fast evidence-led ranking based on time saved, output quality, and how often each tool gets used.",
+      topic: "AI tools",
+      goalFit: 91,
+      source: "boss",
+      status: "suggested",
+      skillId: "demo_skill_breakdown",
+    },
+    {
+      id: "demo_idea_hook",
+      title: "Why your useful videos still lose people in two seconds",
+      hook: "The information is good. Your first sentence is making it invisible.",
+      angle: "Rewrite three weak educational openings into specific, tension-driven hooks without adding clickbait.",
+      topic: "content strategy",
+      goalFit: 89,
+      source: "boss",
+      status: "suggested",
+      skillId: "demo_skill_system",
+    },
+    {
+      id: "demo_idea_notes",
+      title: "Turn a messy notes app into one publishable video",
+      hook: "You probably have a month of content hiding in one unfinished note.",
+      angle: "Transform a real pile of fragments into a hook, proof sequence, shot list, and publishable short.",
+      topic: "creator systems",
+      goalFit: 87,
+      source: "boss",
+      status: "suggested",
+      skillId: "demo_skill_system",
+    },
+  ];
+
+  const task = (
+    id: string,
+    ideaId: string,
+    stage: TaskStage,
+    title: string,
+    brief: string,
+    scheduledDate: string,
+    time: string,
+    duration: number,
+    status: TaskStatus,
+    evidence?: Evidence,
+    dueAt = localDateTime(scheduledDate, time).toISOString(),
+  ): CreatorTask => ({
+    id,
+    ideaId,
+    stage,
+    title,
+    brief,
+    day: weekdayName(dateFromKey(scheduledDate)),
+    scheduledDate,
+    dueAt,
+    weekStartDate: currentWeek,
+    time,
+    duration,
+    status,
+    evidence,
+  });
+
+  const doneEvidence: Evidence = {
+    type: "done",
+    value: "Completed in demo workspace",
+    createdAt: completedAt,
+  };
+  const tasks: CreatorTask[] = [
+    task("demo_task_research", "demo_idea_agent", "research", "Research the claim", "Collect three examples that show the difference between a chat response and an agent completing a workflow.", monday, "09:30", 25, "done", doneEvidence),
+    task("demo_task_script", "demo_idea_agent", "script", "Lock the hook and script", "Choose the strongest hook and tighten the demonstration into a 40-second story.", tuesday, "10:00", 35, "done", doneEvidence),
+    task("demo_task_plan", "demo_idea_agent", "production", "Build the shot plan", "Prepare the desk setup, product screen recording, before-and-after frame, and final call to action.", wednesday, "14:00", 15, "done", doneEvidence),
+    task("demo_task_shoot", "demo_idea_agent", "shoot", "Shoot the AI agent workflow video", "Record the A-roll first, then capture the agent handoff and three proof shots. Do not start editing yet.", activeDate, activeTime, 40, "active", undefined, activeDue.toISOString()),
+    task("demo_task_edit", "demo_idea_agent", "edit", "Finish the edit", "Cut dead air, make the result visible in the first three seconds, add captions, and export the final.", nextDate, "14:00", 50, "queued"),
+    task("demo_task_publish", "demo_idea_agent", "publish", "Publish and send the link", "Post to TikTok, Instagram Reels, and YouTube Shorts, then save the public link.", publishDate, "17:30", 10, "queued"),
+    task("demo_calendar_research", "demo_idea_calendar", "research", "Find the workflow proof", "Pull the weekly planning screenshot and document the decisions the new system removed.", monday, "11:00", 20, "done", doneEvidence),
+    task("demo_calendar_script", "demo_idea_calendar", "script", "Write the before-and-after story", "Turn the chaotic week into a tight problem, switch, system, and result sequence.", monday, "14:30", 30, "done", doneEvidence),
+    task("demo_calendar_shoot", "demo_idea_calendar", "shoot", "Shoot the creator system demo", "Capture the desk B-roll and the calendar transformation.", tuesday, "13:00", 35, "done", doneEvidence),
+    task("demo_calendar_edit", "demo_idea_calendar", "edit", "Edit the creator system demo", "Keep the visual switch fast and label the three operating rules.", wednesday, "10:30", 45, "done", doneEvidence),
+    task("demo_calendar_publish", "demo_idea_calendar", "publish", "Publish the creator system demo", "Post the final cut and record the public link.", wednesday, "17:30", 10, "done", {
+      type: "link",
+      value: "https://example.com/mini-ceo-demo-publish",
+      createdAt: completedAt,
+    }),
+  ];
+
+  return {
+    version: 2,
+    onboardingComplete: true,
+    profile: {
+      name: "Alex",
+      goal: "Make AI tools and creator systems practical for independent creators.",
+      platforms: ["TikTok", "Instagram Reels", "YouTube Shorts"],
+      videosPerWeek: 3,
+      topics: ["AI tools", "creator systems", "content strategy"],
+      scheduleStyle: "batch",
+      workDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+      bossMode: "serious",
+      quietHours: { start: "21:00", end: "08:00" },
+    },
+    references: [
+      {
+        id: "demo_reference_agent",
+        label: "Fast AI product breakdown",
+        sourceType: "link",
+        sourceValue: "https://example.com/reference/ai-breakdown",
+        createdAt: new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: "demo_reference_system",
+        label: "Creator workflow before-and-after",
+        sourceType: "video",
+        sourceValue: "demo-creator-workflow.mp4",
+        createdAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ],
+    skills,
+    ideas,
+    tasks,
+    streak: 4,
+    weeklyScore: 86,
+    bossApproval: 91,
+    publishedThisWeek: 1,
+    achievements: [
+      {
+        id: "demo_achievement_hired",
+        title: "Hired",
+        detail: "Committed to a creator goal and approved the first assignment.",
+        unlockedAt: new Date(now.getTime() - 12 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: "demo_achievement_streak",
+        title: "Four-day streak",
+        detail: "Moved a real content project forward four days in a row.",
+        unlockedAt: completedAt,
+      },
+      {
+        id: "demo_achievement_publish",
+        title: "First publish",
+        detail: "Finished the production pipeline and shipped a public video.",
+        unlockedAt: completedAt,
+      },
+    ],
+    lastActiveDate: today,
+    activityDates: Array.from({ length: 4 }, (_, index) => localDateKey(addDays(now, -index))).sort(),
+    weekStartDate: currentWeek,
+  };
+}
 
 export const BOSS_MODES: Array<{
   id: BossMode;

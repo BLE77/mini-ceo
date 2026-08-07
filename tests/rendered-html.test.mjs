@@ -106,11 +106,40 @@ test("classic Mac chrome exposes real commands and honest connection states", as
 
   assert.doesNotMatch(source, /<span className="mac-menu-item">(?:File|Edit|View|Boss)<\/span>/);
   assert.match(source, /className=\{`mac-menu-command/);
-  assert.match(source, /section="Connections"/);
+  assert.match(source, /section=\{isDemoMode \? "Demo mode" : "Connections"\}/);
   assert.match(source, /function ConnectionsView/);
   assert.match(source, /Anything marked not connected has no hidden button or simulated data behind it/);
-  assert.match(source, /Accounts and cloud sync/);
+  assert.match(source, /Account and creator workspace/);
+  assert.match(source, /OpenRouter boss brain/);
+  assert.match(source, /ElevenLabs character voice/);
+  assert.match(source, /iPhone Web Push/);
   assert.match(source, /Creator platforms/);
+});
+
+test("private backend routes require host authentication before data access", async () => {
+  const worker = await getWorker();
+  for (const path of ["/api/sync", "/api/push"]) {
+    const response = await worker.fetch(
+      new Request(`http://localhost${path}`),
+      bindings(),
+      executionContext,
+    );
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: "Authentication required" });
+  }
+});
+
+test("hosted AI, voice, and push credentials remain server-side environment values", async () => {
+  const sources = await Promise.all([
+    readFile(new URL("../app/api/assistant/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/elevenlabs.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/push.ts", import.meta.url), "utf8"),
+  ]);
+  const source = sources.join("\n");
+  assert.match(source, /process\.env\.OPENROUTER_API_KEY/);
+  assert.match(source, /process\.env\.ELEVENLABS_API_KEY/);
+  assert.match(source, /process\.env\.VAPID_PRIVATE_KEY/);
+  assert.doesNotMatch(source, /sk-(?:or-)?v?1?-[A-Za-z0-9]{20,}/);
 });
 
 test("assistant route returns grounded creator help without external configuration", async () => {
@@ -194,6 +223,7 @@ test("ships a complete installable PWA shell", async () => {
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 
   assert.equal(manifest.name, "Mini CEO - Your boss in your pocket");
+  assert.equal(manifest.id, "/");
   assert.equal(manifest.display, "standalone");
   assert.equal(manifest.icons.length, 2);
   assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ["192x192", "512x512"]);
@@ -208,7 +238,9 @@ test("ships a complete installable PWA shell", async () => {
     new URL("../public/sw.js", import.meta.url),
     "utf8",
   );
-  assert.match(serviceWorker, /mini-ceo-shell-v2/);
+  assert.match(serviceWorker, /mini-ceo-shell-v3/);
+  assert.match(serviceWorker, /addEventListener\("push"/);
+  assert.match(serviceWorker, /showNotification/);
 });
 
 test("ships every typed Mini CEO expression and action asset", async () => {
@@ -299,6 +331,21 @@ test("state model maintains real streaks and rolls weekly metrics forward", asyn
   assert.equal(rolled.streak, 3);
   assert.equal(rolled.tasks[0].weekStartDate, "2026-07-27");
   assert.equal(rolled.tasks[1].weekStartDate, "2026-08-03");
+});
+
+test("demo mode seeds a complete isolated presentation story", async () => {
+  const { createDemoState, DEMO_STORAGE_KEY, STORAGE_KEY } = await getStateModel();
+  const demo = createDemoState(new Date(2026, 7, 6, 12, 0, 0));
+
+  assert.notEqual(DEMO_STORAGE_KEY, STORAGE_KEY);
+  assert.equal(demo.onboardingComplete, true);
+  assert.equal(demo.profile.name, "Alex");
+  assert.equal(demo.publishedThisWeek, 1);
+  assert.equal(demo.skills.length, 2);
+  assert.equal(demo.ideas.length, 5);
+  assert.equal(demo.tasks.filter((task) => task.status === "active").length, 1);
+  assert.ok(demo.tasks.filter((task) => task.status === "done").length >= 7);
+  assert.ok(demo.achievements.some((achievement) => achievement.title === "First publish"));
 });
 
 test("accountability ladder respects quiet hours and boss-specific pressure", async () => {

@@ -3890,6 +3890,109 @@ select {
   }
 }
 
+/* Isolated presentation workspace. Demo controls stay deliberately compact so
+   the product remains the focus while the presenter can always restore state. */
+.onboarding-demo-button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  margin-right: 12px;
+  margin-left: auto;
+  border: 1px solid var(--mac-black);
+  padding: 4px 10px;
+  background: #f8cf63;
+  box-shadow: 2px 2px 0 rgba(21, 27, 25, 0.35);
+  color: var(--mac-black);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.onboarding-demo-button:active {
+  box-shadow: none;
+  transform: translate(2px, 2px);
+}
+
+.demo-mode-ribbon {
+  position: relative;
+  z-index: 11;
+  display: grid;
+  min-height: 36px;
+  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  border-bottom: 2px solid var(--mac-black);
+  padding: 5px 8px;
+  background: #f8cf63;
+  color: var(--mac-black);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+}
+
+.demo-mode-ribbon > span,
+.demo-mode-ribbon > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.demo-mode-ribbon > span {
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.demo-mode-ribbon p {
+  overflow: hidden;
+  margin: 0;
+  color: rgba(21, 27, 25, 0.72);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.demo-mode-ribbon > div {
+  justify-self: end;
+}
+
+.demo-mode-ribbon button {
+  border: 1px solid var(--mac-black);
+  padding: 3px 7px;
+  background: #f3eee4;
+  box-shadow: 1px 1px 0 rgba(21, 27, 25, 0.35);
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.demo-mode-ribbon button:active {
+  box-shadow: none;
+  transform: translate(1px, 1px);
+}
+
+@media (max-width: 700px) {
+  .onboarding-demo-button {
+    margin-right: 8px;
+    padding-inline: 7px;
+    font-size: 0.55rem;
+  }
+
+  .demo-mode-ribbon {
+    grid-template-columns: 1fr auto;
+    gap: 6px;
+  }
+
+  .demo-mode-ribbon p {
+    display: none;
+  }
+
+  .demo-mode-ribbon button {
+    padding-inline: 5px;
+  }
+}
+
 /* Swappable Mini CEO artwork. The original CSS figure is only mounted after a
    confirmed image error, so it cannot flash while the PNG is loading. */
 .boss-character.has-asset {
