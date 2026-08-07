@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Image from "next/image";
 import { useState } from "react";
 import {
@@ -61,11 +61,27 @@ export function BossCharacter({
   const characterLabel = action
     ? `Mini CEO ${ACTION_LABELS[action]}`
     : `Mini CEO looking ${EXPRESSION_LABELS[resolvedExpression]}`;
+  const energeticExpression =
+    resolvedExpression === "focused" ||
+    resolvedExpression === "impatient" ||
+    resolvedExpression === "celebrating" ||
+    resolvedExpression === "surprised";
+  const expressionMotion =
+    resolvedExpression === "celebrating"
+      ? { y: [0, -8, 0], rotate: [0, -1, 1, 0] }
+      : resolvedExpression === "concerned" || resolvedExpression === "disappointed"
+        ? { y: [0, 2, 0], rotate: [0, -0.25, 0] }
+        : resolvedExpression === "thinking"
+          ? { y: [0, -3, 0], rotate: [0, 0.45, 0] }
+          : energeticExpression
+            ? { y: [0, -4, 0], rotate: [0, -0.8, 0.8, 0] }
+            : { y: [0, -4, 0], rotate: [0, 0.35, 0] };
 
   return (
     <div
       className={`boss-character has-asset boss-${mode} mood-${mood} asset-${action ?? resolvedExpression} ${assetFailed ? "boss-asset-failed" : ""} ${speaking ? "is-speaking" : ""} ${compact ? "boss-compact" : ""}`}
       aria-label={characterLabel}
+      data-expression={resolvedExpression}
       role="img"
     >
       <motion.div
@@ -73,32 +89,39 @@ export function BossCharacter({
         animate={
           reduceMotion
             ? undefined
-            : {
-                y: [0, -4, 0],
-                rotate: mood === "impatient" ? [0, -0.8, 0.8, 0] : [0, 0.35, 0],
-              }
+            : expressionMotion
         }
         transition={{
-          duration: mood === "impatient" ? 1.8 : 4.8,
+          duration: energeticExpression ? 1.8 : 4.8,
           repeat: Infinity,
           ease: "easeInOut",
         }}
       >
-        {!assetFailed && (
-          <Image
-            key={assetKey}
-            className="boss-character-art"
-            src={assetSrc}
-            alt=""
-            aria-hidden="true"
-            width={512}
-            height={512}
-            draggable={false}
-            priority={!compact}
-            unoptimized
-            onError={() => setFailedAsset(assetKey)}
-          />
-        )}
+        <AnimatePresence initial={false} mode="sync">
+          {!assetFailed && (
+            <motion.div
+              key={assetKey}
+              className="boss-character-art-frame"
+              initial={reduceMotion ? false : { opacity: 0, scale: 0.965 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={reduceMotion ? undefined : { opacity: 0, scale: 1.025 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <Image
+                className="boss-character-art"
+                src={assetSrc}
+                alt=""
+                aria-hidden="true"
+                width={512}
+                height={512}
+                draggable={false}
+                priority={!compact}
+                unoptimized
+                onError={() => setFailedAsset(assetKey)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
         {assetFailed && (
           <div className="boss-character-fallback" aria-hidden="true">
             <div className="boss-shadow" />

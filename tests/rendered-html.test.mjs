@@ -317,6 +317,64 @@ test("ships every typed Mini CEO expression and action asset", async () => {
   }
 });
 
+test("conversation portraits follow the real agent response and live interaction phase", async () => {
+  const {
+    inferBossExpression,
+    resolveConversationBossExpression,
+  } = await getBossAssets();
+
+  assert.equal(
+    inferBossExpression(
+      "You lazy fuck, you missed three days. Get your ass in gear and publish it right now.",
+      "unhinged",
+    ),
+    "focused",
+  );
+  assert.equal(
+    inferBossExpression("The deadline is overdue. Publish immediately.", "unhinged"),
+    "impatient",
+  );
+  assert.equal(
+    inferBossExpression("You did it. The video is published. Let's go!", "unhinged"),
+    "celebrating",
+  );
+  assert.equal(
+    inferBossExpression("Good move. That's exactly the right next step.", "serious"),
+    "approving",
+  );
+  assert.equal(
+    inferBossExpression("We need proof, so verify the claim before you post.", "serious"),
+    "concerned",
+  );
+  assert.equal(
+    inferBossExpression("Let's think through three options for the hook.", "serious"),
+    "thinking",
+  );
+  assert.equal(
+    resolveConversationBossExpression({
+      message: "You missed the deadline.",
+      mode: "unhinged",
+      phase: "thinking",
+    }),
+    "thinking",
+  );
+  assert.equal(
+    resolveConversationBossExpression({
+      message: "You missed the deadline.",
+      mode: "unhinged",
+      phase: "error",
+    }),
+    "concerned",
+  );
+
+  const appSource = await readFile(
+    new URL("../app/mini-ceo-app.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(appSource, /resolveConversationBossExpression/);
+  assert.doesNotMatch(appSource, /isSpeaking \? "surprised"/);
+});
+
 test("state model maintains real streaks and rolls weekly metrics forward", async () => {
   const {
     calculateCreatorStreak,

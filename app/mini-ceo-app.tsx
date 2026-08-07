@@ -52,6 +52,10 @@ import {
 import { BossCharacter } from "./components/BossCharacter";
 import { EditorMarketplace } from "./components/EditorMarketplace";
 import {
+  resolveConversationBossExpression,
+  type BossConversationPhase,
+} from "./lib/boss-assets";
+import {
   AccountabilityReminder,
   AppView,
   BOSS_MODES,
@@ -2782,6 +2786,30 @@ function AssistantSheet({
   const suggestions = unhinged
     ? ["What task should I do today?", "Why am I three days late?", "Give me the fastest way to publish"]
     : ["Give me three stronger hooks", "Turn this into bullet points", "What props do I need?"];
+  const latestBossMessage = useMemo(
+    () => [...messages].reverse().find((message) => message.role === "boss")?.text,
+    [messages],
+  );
+  const conversationPhase: BossConversationPhase = error
+    ? "error"
+    : isListening
+      ? "listening"
+      : busy
+        ? "thinking"
+        : checkingConnections
+          ? "connecting"
+          : isSpeaking
+            ? "speaking"
+            : "idle";
+  const conversationExpression = useMemo(
+    () =>
+      resolveConversationBossExpression({
+        message: latestBossMessage,
+        mode: bossMode,
+        phase: conversationPhase,
+      }),
+    [bossMode, conversationPhase, latestBossMessage],
+  );
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -2794,8 +2822,8 @@ function AssistantSheet({
           <div className="assistant-boss-mini">
             <BossCharacter
               mode={bossMode}
-              mood={unhinged ? "impatient" : "talking"}
-              expression={busy ? "thinking" : isSpeaking ? "surprised" : unhinged ? "impatient" : "approving"}
+              mood={conversationExpression}
+              expression={conversationExpression}
               speaking={isSpeaking}
               compact
             />
