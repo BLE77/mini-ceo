@@ -141,6 +141,12 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
+      const providerError = (await response.text().catch(() => "")).slice(0, 800);
+      console.error("OpenRouter idea generation failed", {
+        status: response.status,
+        model: configuredModel,
+        providerError,
+      });
       return Response.json(
         { error: "The real idea engine did not respond. No template ideas were substituted." },
         { status: 502, headers: { "Cache-Control": "no-store" } },
