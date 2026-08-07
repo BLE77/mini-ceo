@@ -4374,9 +4374,3 @@ select {
     padding-top: 4px;
   }
 }
-
-@media (max-width: 430px) {
-  .mac-menu-section {
-    display: none;
-  }
-}
