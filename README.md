@@ -2,19 +2,20 @@
 
 Mini CEO is a mobile-first creator operating system: an active character turns a creator goal, references, and ideas into a weekly production schedule, then follows up until the content is published.
 
-## MVP capabilities
+## Hackathon build
 
 - Character-first onboarding and three bossiness modes
 - Creator goals, platforms, weekly output targets, availability, and batching
-- Goal-aware idea generation and explicit idea approval
+- Live OpenRouter idea generation with visible provenance and research requirements
 - Research, script, production, shoot, edit, and publish pipeline
 - Reorderable weekly production schedule
 - Completion by status, private file upload, or published link
-- Content Skills learned from hooks, pacing, tone, format, and length
-- Voice output and supported-browser voice input
+- Private reference storage without pretending unprocessed files were analyzed
+- ElevenLabs character voice with supported-browser voice input
 - Creator streak, consistency score, boss approval, achievements, and weekly review
-- Installable PWA shell with offline caching and notification permission flow
-- Assistant API with a zero-config local engine and optional Hermes-compatible provider
+- Installable PWA shell with offline caching and real Web Push subscription routes
+- Authenticated cloud workspace syncing on the hosted build
+- Live OpenRouter assistant with no canned response fallback
 
 ## Run locally
 
@@ -23,7 +24,7 @@ npm install
 npm run dev
 ```
 
-The development server prints the local URL. Creator data is stored on the current device; uploaded files are saved privately in IndexedDB.
+The development server prints the local URL. Without hosted credentials, AI and voice routes fail visibly instead of returning simulated results. Uploaded files are saved privately in IndexedDB and are not automatically analyzed.
 
 ## Verify
 
@@ -32,17 +33,17 @@ npm test
 npm run lint
 ```
 
-## Optional Hermes provider
+## Hosted services
 
-Copy `.env.example` to `.env.local` and set:
+Runtime credentials stay server-side. The production build currently uses:
 
-```bash
-HERMES_API_URL=https://your-hermes-endpoint.example/chat
-HERMES_API_KEY=
-```
+- OpenRouter for the boss assistant and original idea generation
+- ElevenLabs for the consistent character voice
+- authenticated D1 storage for workspace syncing
+- VAPID Web Push for installed PWA notifications
 
-The endpoint receives `{ agent, message, context, system }` and should return `{ reply }`, `{ message }`, or `{ content }`. Without this configuration, the built-in assistant still provides hooks, scripts, research plans, shot lists, and next-step guidance.
+Never commit provider keys. Configure them in the hosting platform's protected environment settings.
 
 ## Privacy model
 
-The hackathon build does not require an account. Profile data and the creator workflow persist in local browser storage, while uploaded drafts and references persist in IndexedDB on the current device. Platform analytics, cross-device sync, and social account integrations remain future work.
+The browser keeps a local copy of the creator workspace. On the authenticated hosted build, structured workspace data also syncs to the user's private cloud record. Uploaded drafts and references stay in IndexedDB on that device. Mini CEO does not claim to watch or understand a file until a real analysis service processes it. Social publishing and platform analytics are not connected yet.
