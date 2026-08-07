@@ -95,11 +95,22 @@ function isContentSkill(value: unknown) {
   );
 }
 
+function isIdeaProvenance(value: unknown) {
+  return (
+    isRecord(value) &&
+    ["ai-original", "creator-input"].includes(String(value.kind)) &&
+    hasStrings(value, ["label", "detail"])
+  );
+}
+
 function isIdea(value: unknown) {
   return (
     isRecord(value) &&
     hasStrings(value, ["id", "title", "hook", "angle", "topic"]) &&
-    isFiniteNumber(value.goalFit) &&
+    (value.goalFit === undefined || isFiniteNumber(value.goalFit)) &&
+    (value.fitReason === undefined || typeof value.fitReason === "string") &&
+    (value.verificationNote === undefined || typeof value.verificationNote === "string") &&
+    (value.provenance === undefined || isIdeaProvenance(value.provenance)) &&
     ["boss", "creator"].includes(String(value.source)) &&
     ["suggested", "approved", "rejected"].includes(String(value.status)) &&
     (value.skillId === undefined || typeof value.skillId === "string")

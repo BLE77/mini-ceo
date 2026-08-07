@@ -21,6 +21,7 @@ import {
   LinkSimple,
   LockKey,
   MagicWand,
+  MagnifyingGlass,
   Microphone,
   PaperPlaneTilt,
   Pause,
@@ -71,9 +72,7 @@ import {
   clearPrivateFiles,
   createDemoState,
   createEmptyState,
-  createSkill,
   ensureSingleActiveTask,
-  generateIdeas,
   getAccountabilityReminder,
   gradeForScore,
   localDateKey,
@@ -178,6 +177,61 @@ function urlBase64ToUint8Array(value: string) {
   const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
   const raw = window.atob(base64);
   return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+}
+
+async function requestGeneratedIdeas({
+  profile,
+  references,
+  count,
+  existingTitles,
+}: {
+  profile: MiniCeoState["profile"];
+  references: ReferenceAsset[];
+  count: number;
+  existingTitles: string[];
+}) {
+  const response = await fetch("/api/ideas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      goal: profile.goal,
+      topics: profile.topics,
+      platforms: profile.platforms,
+      bossMode: profile.bossMode,
+      count,
+      referenceLabels: references.map(
+        (reference) => `${reference.label} (${reference.sourceType})`,
+      ),
+      existingTitles,
+    }),
+  });
+  const data = (await response.json().catch(() => ({}))) as {
+    error?: string;
+    model?: string;
+    ideas?: Array<{
+      title: string;
+      hook: string;
+      angle: string;
+      topic: string;
+      fitReason: string;
+      verificationNote: string;
+      provenance: NonNullable<Idea["provenance"]>;
+    }>;
+  };
+  if (!response.ok || !Array.isArray(data.ideas) || !data.ideas.length) {
+    throw new Error(data.error || "The live idea engine returned no ideas.");
+  }
+  return {
+    model: data.model,
+    ideas: data.ideas.map(
+      (idea): Idea => ({
+        ...idea,
+        id: makeId("idea"),
+        source: "boss",
+        status: "suggested",
+      }),
+    ),
+  };
 }
 
 function SectionTitle({
@@ -313,6 +367,11 @@ export default function MiniCeoApp() {
         if (demoMode) {
           setCloudConnection({ status: "local" });
           setCloudReady(true);
+          setVoiceConnection({
+            status: "speechSynthesis" in window ? "device" : "error",
+          });
+          setBrainConnection({ status: "local" });
+          setPushConnection({ status: "ready" });
         }
         if (saved) {
           setState(migrateMiniCeoState(JSON.parse(saved)));
@@ -429,6 +488,7 @@ export default function MiniCeoApp() {
   }, [cloudConnection.status, cloudReady, hydrated, isDemoMode, state]);
 
   useEffect(() => {
+    if (!hydrated || isDemoMode) return;
     let cancelled = false;
 
     void fetch("/api/voice", { cache: "no-store" })
@@ -469,7 +529,7 @@ export default function MiniCeoApp() {
           setBrainConnection({ status: "openrouter", model: data.model || undefined });
           return;
         }
-        setBrainConnection({ status: data.configured ? "error" : "local", model: data.model || undefined });
+        setBrainConnection({ status: "error", model: data.model || undefined });
       })
       .catch(() => {
         if (!cancelled) setBrainConnection({ status: "error" });
@@ -499,7 +559,7 @@ export default function MiniCeoApp() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hydrated, isDemoMode]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -723,7 +783,7 @@ export default function MiniCeoApp() {
     showToast("On iPhone: Share, then Add to Home Screen.");
   };
 
-  const prepareIdeas = () => {
+  const prepareIdeas = async () => {
     const topics = topicDraft
       .split(",")
       .map((topic) => topic.trim())
@@ -741,16 +801,37 @@ export default function MiniCeoApp() {
           createdAt: new Date().toISOString(),
         }
       : undefined;
-    const skill = createSkill(profile, reference);
-    const ideas = generateIdeas(profile, [skill], Math.max(4, profile.videosPerWeek));
-    setState((current) => ({
-      ...current,
-      profile,
-      references: reference ? [...current.references, reference] : current.references,
-      skills: [skill],
-      ideas,
-    }));
-    setOnboardingStep(5);
+    const references = reference ? [...state.references, reference] : state.references;
+    setIsGenerating(true);
+    try {
+      const generated = await requestGeneratedIdeas({
+        profile,
+        references,
+        count: Math.max(4, profile.videosPerWeek),
+        existingTitles: state.ideas.map((idea) => idea.title),
+      });
+      setBrainConnection({ status: "openrouter", model: generated.model });
+      setState((current) => ({
+        ...current,
+        profile,
+        references,
+        ideas: [
+          ...generated.ideas,
+          ...current.ideas.filter(
+            (idea) => idea.status === "approved" || idea.source === "creator",
+          ),
+        ],
+      }));
+      setOnboardingStep(5);
+    } catch (error) {
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "The live idea engine failed. No canned suggestions were added.",
+      );
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const approveIdea = (ideaId: string) => {
@@ -945,23 +1026,11 @@ export default function MiniCeoApp() {
     };
     try {
       await savePrivateFile(reference.id, file);
-      setState((current) => {
-        const skill = current.skills[0]
-          ? {
-              ...current.skills[0],
-              examples: current.skills[0].examples + 1,
-              confidence: Math.min(96, current.skills[0].confidence + 8),
-            }
-          : createSkill(current.profile, reference);
-        return {
-          ...current,
-          references: [...current.references, reference],
-          skills: current.skills[0]
-            ? [skill, ...current.skills.slice(1)]
-            : [skill],
-        };
-      });
-      showToast("Example saved privately. Your Content Skill grew.");
+      setState((current) => ({
+        ...current,
+        references: [...current.references, reference],
+      }));
+      showToast("Reference saved privately. Mini CEO has not analyzed the file contents.");
     } catch {
       showToast("The reference could not be saved on this device. Try a smaller file.");
     }
@@ -969,28 +1038,33 @@ export default function MiniCeoApp() {
 
   const generateMoreIdeas = async () => {
     setIsGenerating(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 850));
-    setState((current) => ({
-      ...current,
-      ideas: [
-        ...generateIdeas(
-          current.profile,
-          current.skills,
-          Math.max(
-            1,
-            current.profile.videosPerWeek -
-              new Set(
-                current.tasks
-                  .filter((task) => task.weekStartDate === current.weekStartDate)
-                  .map((task) => task.ideaId),
-              ).size,
-          ),
-        ),
-        ...current.ideas,
-      ],
-    }));
-    setIsGenerating(false);
-    showToast("Fresh ideas are ready for approval.");
+    const scheduledCount = new Set(
+      state.tasks
+        .filter((task) => task.weekStartDate === state.weekStartDate)
+        .map((task) => task.ideaId),
+    ).size;
+    try {
+      const generated = await requestGeneratedIdeas({
+        profile: state.profile,
+        references: state.references,
+        count: Math.max(1, state.profile.videosPerWeek - scheduledCount),
+        existingTitles: state.ideas.map((idea) => idea.title),
+      });
+      setBrainConnection({ status: "openrouter", model: generated.model });
+      setState((current) => ({
+        ...current,
+        ideas: [...generated.ideas, ...current.ideas],
+      }));
+      showToast("The live model generated new original ideas.");
+    } catch (error) {
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "The live idea engine failed. No canned suggestions were added.",
+      );
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const addManualIdea = (event: FormEvent) => {
@@ -1000,9 +1074,15 @@ export default function MiniCeoApp() {
       id: makeId("idea"),
       title: manualIdea.trim(),
       hook: "Hook not locked yet. Ask Mini CEO for three options.",
-      angle: `Creator-submitted idea aligned to: ${state.profile.goal}`,
+      angle: "Creator-submitted concept. The angle has not been developed yet.",
       topic: state.profile.topics[0] || "Creator idea",
-      goalFit: 88,
+      fitReason: "You submitted this idea directly; Mini CEO has not assigned a numeric score.",
+      verificationNote: "Any factual or trend claims still need research before scripting.",
+      provenance: {
+        kind: "creator-input",
+        label: "Submitted by you",
+        detail: "Saved exactly from your own idea entry.",
+      },
       source: "creator",
       status: "suggested",
       skillId: state.skills[0]?.id,
@@ -1054,7 +1134,7 @@ export default function MiniCeoApp() {
         setBrainConnection(
           data.provider === "openrouter"
             ? { status: "openrouter", model: data.model }
-            : { status: "local" },
+            : { status: "error" },
         );
         const reply: AssistantMessage = {
           id: makeId("message"),
@@ -1064,6 +1144,7 @@ export default function MiniCeoApp() {
         setMessages((current) => [...current, reply]);
         speak(data.reply);
       } catch {
+        setBrainConnection({ status: "error" });
         const fallback = "I could not reach the assistant service. Your schedule is safe; try again in a moment.";
         setMessages((current) => [
           ...current,
@@ -1185,6 +1266,7 @@ export default function MiniCeoApp() {
         topicDraft={topicDraft}
         referenceDraft={referenceDraft}
         approvedIdeas={approvedIdeas}
+        isGenerating={isGenerating}
         setStep={setOnboardingStep}
         updateProfile={updateProfile}
         setTopicDraft={setTopicDraft}
@@ -1423,6 +1505,7 @@ function Onboarding({
   topicDraft,
   referenceDraft,
   approvedIdeas,
+  isGenerating,
   setStep,
   updateProfile,
   setTopicDraft,
@@ -1442,11 +1525,12 @@ function Onboarding({
   topicDraft: string;
   referenceDraft: string;
   approvedIdeas: Idea[];
+  isGenerating: boolean;
   setStep: (step: number) => void;
   updateProfile: <K extends keyof MiniCeoState["profile"]>(key: K, value: MiniCeoState["profile"][K]) => void;
   setTopicDraft: (value: string) => void;
   setReferenceDraft: (value: string) => void;
-  prepareIdeas: () => void;
+  prepareIdeas: () => Promise<void>;
   approveIdea: (id: string) => void;
   rejectIdea: (id: string) => void;
   finish: () => void;
@@ -1701,7 +1785,7 @@ function Onboarding({
               <div className="onboarding-heading">
                 <p className="eyebrow">Train your boss</p>
                 <h1>What should your content feel like?</h1>
-                <p>Topics set the territory. Examples teach Mini CEO your hooks, pacing, tone, format, and length.</p>
+                <p>Topics set the territory. Reference labels give the live model context without pretending it watched content it cannot access.</p>
               </div>
               <label className="field-block field-block-wide">
                 <span>Topics and content lanes</span>
@@ -1733,8 +1817,8 @@ function Onboarding({
               <div className="skill-preview-line">
                 <Sparkle size={19} weight="fill" />
                 <div>
-                  <strong>Content Skills grow with every example.</strong>
-                  <p>Mini CEO learns reusable structures instead of copying someone&apos;s exact expression.</p>
+                  <strong>No imaginary analysis.</strong>
+                  <p>Mini CEO records the reference label honestly. File or video analysis will appear only after a real analysis request succeeds.</p>
                 </div>
               </div>
             </div>
@@ -1749,6 +1833,18 @@ function Onboarding({
               </div>
               <div className="approval-layout">
                 <div className="onboarding-idea-stack">
+                  {isGenerating && (
+                    <div className="idea-skeleton-list" aria-busy="true">
+                      {[0, 1, 2].map((item) => <div key={item}><span /><span /><span /></div>)}
+                    </div>
+                  )}
+                  {!isGenerating && !state.ideas.length && (
+                    <div className="empty-mini-state honest-empty-state">
+                      <Sparkle size={28} />
+                      <p>No real ideas have been generated yet. Mini CEO will not substitute templates.</p>
+                      <AppButton onClick={() => void prepareIdeas()}>Try the live model again</AppButton>
+                    </div>
+                  )}
                   {state.ideas.slice(0, Math.max(4, profile.videosPerWeek)).map((idea, index) => (
                     <motion.article
                       key={idea.id}
@@ -1757,9 +1853,11 @@ function Onboarding({
                       animate={{ opacity: idea.status === "rejected" ? 0.42 : 1, y: 0 }}
                       transition={{ delay: index * 0.08 }}
                     >
-                      <div className="idea-fit"><Target size={15} /> {idea.goalFit}% goal fit</div>
+                      <div className="idea-fit"><Sparkle size={15} /> {idea.provenance?.label || (idea.source === "creator" ? "Submitted by you" : "Legacy approved idea")}</div>
                       <h3>{idea.title}</h3>
                       <p>{idea.hook}</p>
+                      {idea.fitReason && <p className="idea-fit-reason"><strong>Why it fits:</strong> {idea.fitReason}</p>}
+                      {idea.verificationNote && <p className="idea-verification"><strong>Verify:</strong> {idea.verificationNote}</p>}
                       <div className="idea-approval-actions">
                         <AppButton
                           variant={idea.status === "approved" ? "secondary" : "primary"}
@@ -1809,8 +1907,8 @@ function Onboarding({
             </AppButton>
           )}
           {step === 4 && (
-            <AppButton onClick={prepareIdeas} disabled={!topicDraft.trim()}>
-              Build my ideas <MagicWand size={17} />
+            <AppButton onClick={() => void prepareIdeas()} disabled={!topicDraft.trim() || isGenerating}>
+              {isGenerating ? "Asking the live model…" : "Generate real ideas"} <MagicWand size={17} />
             </AppButton>
           )}
           {step === 5 && (
@@ -2001,7 +2099,7 @@ function IdeasView({
           </AppButton>
         }
       />
-      <p className="section-lead">Every suggestion is scored against your creator goal before it reaches the schedule.</p>
+      <p className="section-lead">Every boss suggestion must come from the connected live model. Mini CEO shows why it fits and what still needs verification.</p>
 
       <form className="quick-capture" onSubmit={addManualIdea}>
         <Plus size={18} />
@@ -2017,7 +2115,7 @@ function IdeasView({
 
       <div className="idea-list">
         {visibleIdeas.map((idea, index) => {
-          const skill = state.skills.find((item) => item.id === idea.skillId);
+          const sourceLabel = idea.provenance?.label || (idea.source === "creator" ? "Your idea" : "Legacy approved idea");
           return (
             <motion.article
               key={idea.id}
@@ -2028,13 +2126,14 @@ function IdeasView({
               layout
             >
               <div className="idea-row-top">
-                <span className="idea-source">{idea.source === "creator" ? "Your idea" : "Boss suggestion"}</span>
-                <span className="goal-fit"><Target size={14} /> {idea.goalFit}% fit</span>
+                <span className="idea-source">{sourceLabel}</span>
               </div>
               <h3>{idea.title}</h3>
               <div className="hook-line"><strong>Hook</strong><p>{idea.hook}</p></div>
               <p className="idea-angle">{idea.angle}</p>
-              {skill && <div className="skill-reference"><Brain size={15} /> Built with {skill.name}</div>}
+              {idea.fitReason && <p className="idea-fit-reason"><Target size={15} /><span><strong>Why it fits:</strong> {idea.fitReason}</span></p>}
+              {idea.verificationNote && <p className="idea-verification"><MagnifyingGlass size={15} /><span><strong>Verify:</strong> {idea.verificationNote}</span></p>}
+              {idea.provenance?.detail && <p className="idea-provenance-detail">{idea.provenance.detail}</p>}
               <div className="idea-row-actions">
                 {idea.status === "approved" ? (
                   <span className="approved-label"><CheckCircle size={17} weight="fill" /> Approved and scheduled</span>
@@ -2109,16 +2208,15 @@ function SkillsView({
 }) {
   return (
     <div className="standard-view skills-view">
-      <SectionTitle eyebrow="Your creative playbooks" title="Content Skills" />
-      <p className="section-lead">Examples teach the boss what works for you. Every upload strengthens a reusable skill without copying exact expression.</p>
-      {state.skills.map((skill) => (
+      <SectionTitle eyebrow="Real creator context" title="Reference vault" />
+      <p className="section-lead">Files saved here stay private to this device. Mini CEO does not claim to understand a file until a real transcript or media-analysis service has processed it.</p>
+      {state.skills.filter((skill) => skill.id.startsWith("demo_")).map((skill) => (
         <article key={skill.id} className="skill-detail">
           <div className="skill-detail-head">
             <div className="skill-icon"><Brain size={24} weight="fill" /></div>
-            <div><span>Active Content Skill</span><h3>{skill.name}</h3></div>
-            <strong>{skill.confidence}%</strong>
+            <div><span>Demo-only example</span><h3>{skill.name}</h3></div>
+            <strong>Demo</strong>
           </div>
-          <div className="skill-confidence"><span style={{ width: `${skill.confidence}%` }} /></div>
           <dl>
             <div><dt>Hook</dt><dd>{skill.hook}</dd></div>
             <div><dt>Pacing</dt><dd>{skill.pacing}</dd></div>
@@ -2126,20 +2224,27 @@ function SkillsView({
             <div><dt>Visual</dt><dd>{skill.visualFormat}</dd></div>
             <div><dt>Length</dt><dd>{skill.length}</dd></div>
           </dl>
-          <footer><span>{skill.examples} reference {skill.examples === 1 ? "example" : "examples"}</span><small>Private to this device</small></footer>
+          <footer><span>Illustrative data</span><small>Never used in a real workspace</small></footer>
         </article>
       ))}
+
+      {!state.skills.some((skill) => skill.id.startsWith("demo_")) && (
+        <div className="honest-empty-state">
+          <Brain size={24} />
+          <div><strong>No analyzed Content Skill yet</strong><span>Your saved references remain reference metadata until real analysis completes.</span></div>
+        </div>
+      )}
 
       <label className="reference-dropzone">
         <input type="file" accept="video/*,.txt,.md,.pdf" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addReferenceFile(file); }} />
         <UploadSimple size={25} />
-        <div><strong>Add a reference</strong><span>Upload a video, script, or notes file.</span></div>
+        <div><strong>Save a private reference</strong><span>Stored on this device; not automatically analyzed.</span></div>
         <CaretRight size={18} />
       </label>
 
       <section className="assistant-capabilities">
         <div><Sparkle size={20} weight="fill" /><span>Mini CEO assistant</span></div>
-        <h3>Put the skill to work.</h3>
+        <h3>Use your real creator context.</h3>
         <div className="capability-chips">
           <button onClick={openAssistant}>Write three hooks</button>
           <button onClick={openAssistant}>Draft a natural script</button>
@@ -2303,7 +2408,7 @@ function ConnectionsView({
     : brainConnection.status === "checking"
       ? "Checking"
       : brainConnection.status === "local"
-        ? "Local fallback"
+        ? "Demo only"
         : "Connection error";
   const cloudStatus = cloudConnection.status === "synced"
     ? "Synced"
@@ -2355,7 +2460,7 @@ function ConnectionsView({
             <div className="connection-icon"><Brain size={20} /></div>
             <div className="connection-copy">
               <div><h4>OpenRouter boss brain</h4><span className={`connection-badge ${brainConnection.status === "openrouter" ? "is-live" : brainConnection.status === "checking" ? "is-device" : "is-off"}`}>{brainStatus}</span></div>
-              <p>{brainConnection.status === "openrouter" ? `${brainConnection.model || "The configured OpenRouter model"} writes the boss replies. Unhinged CEO can use comedic profanity without personal abuse.` : "The deterministic Mini CEO assistant remains available whenever OpenRouter cannot respond."}</p>
+              <p>{brainConnection.status === "openrouter" ? `${brainConnection.model || "The configured OpenRouter model"} writes the boss replies. Unhinged CEO can use comedic profanity without personal abuse.` : "The live boss brain is unavailable. Mini CEO will show the connection failure instead of substituting canned replies."}</p>
             </div>
             <AppButton variant="secondary" onClick={openAssistant}>Open boss</AppButton>
           </article>

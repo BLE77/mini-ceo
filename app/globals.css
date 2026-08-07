@@ -1988,6 +1988,62 @@ button:disabled {
   line-height: 1.5;
 }
 
+.idea-fit-reason,
+.idea-verification {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 10px 0;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.idea-fit-reason svg,
+.idea-verification svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.idea-verification {
+  color: #7b5b23;
+}
+
+.idea-provenance-detail {
+  margin: 12px 0 0;
+  border-left: 2px solid var(--line);
+  padding-left: 10px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.61rem;
+  line-height: 1.5;
+}
+
+.honest-empty-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 2px dashed var(--line);
+  border-radius: 3px;
+  margin: 18px 0;
+  padding: 18px;
+  color: var(--muted);
+}
+
+.honest-empty-state div {
+  display: grid;
+  gap: 4px;
+}
+
+.honest-empty-state strong {
+  color: var(--ink);
+}
+
+.honest-empty-state span {
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
 .skill-reference,
 .approved-label {
   display: inline-flex;

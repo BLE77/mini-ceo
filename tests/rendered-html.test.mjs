@@ -132,6 +132,7 @@ test("private backend routes require host authentication before data access", as
 test("hosted AI, voice, and push credentials remain server-side environment values", async () => {
   const sources = await Promise.all([
     readFile(new URL("../app/api/assistant/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/ideas/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/elevenlabs.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/push.ts", import.meta.url), "utf8"),
   ]);
@@ -142,7 +143,7 @@ test("hosted AI, voice, and push credentials remain server-side environment valu
   assert.doesNotMatch(source, /sk-(?:or-)?v?1?-[A-Za-z0-9]{20,}/);
 });
 
-test("assistant route returns grounded creator help without external configuration", async () => {
+test("assistant route refuses to simulate creator help without a live provider", async () => {
   const worker = await getWorker();
   const response = await worker.fetch(
     new Request("http://localhost/api/assistant", {
@@ -154,7 +155,6 @@ test("assistant route returns grounded creator help without external configurati
           goal: "Make AI news useful for working creators",
           topics: ["AI news"],
           bossMode: "serious",
-          idea: { title: "The AI update everyone is explaining wrong" },
         },
       }),
     }),
@@ -162,49 +162,38 @@ test("assistant route returns grounded creator help without external configurati
     executionContext,
   );
 
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 503);
   const body = await response.json();
-  assert.equal(body.provider, "mini-ceo-local");
-  assert.match(body.reply, /Three hooks/i);
-  assert.match(body.reply, /AI update everyone is explaining wrong/i);
+  assert.match(body.error, /No simulated reply was substituted/i);
+  assert.equal(body.reply, undefined);
 });
 
-test("assistant route covers the creator workflow and validates requests", async () => {
+test("idea route refuses to substitute templates without the live model", async () => {
   const worker = await getWorker();
-  const cases = [
-    ["Write a natural script outline", /Natural bullet outline/i],
-    ["Build a production shot list", /Production checklist/i],
-    ["Give me a research plan", /Research plan/i],
-    ["Suggest a viral idea", /Use this angle/i],
-  ];
-
-  for (const [message, expected] of cases) {
-    const response = await worker.fetch(
-      new Request("http://localhost/api/assistant", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          message,
-          context: {
-            goal: "Publish useful creator education three times a week",
-            topics: ["creator systems"],
-            bossMode: "coach",
-            idea: { title: "A better weekly creator workflow" },
-            skill: { length: "30 seconds" },
-          },
-        }),
+  const response = await worker.fetch(
+    new Request("http://localhost/api/ideas", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        goal: "Make AI news useful for working creators",
+        topics: ["AI news"],
+        platforms: ["TikTok"],
+        count: 3,
       }),
-      bindings(),
-      executionContext,
-    );
+    }),
+    bindings(),
+    executionContext,
+  );
 
-    assert.equal(response.status, 200);
-    const body = await response.json();
-    assert.equal(body.provider, "mini-ceo-local");
-    assert.match(body.reply, expected);
-  }
+  assert.equal(response.status, 503);
+  const body = await response.json();
+  assert.match(body.error, /No template ideas were (?:generated|substituted)/i);
+  assert.equal(body.ideas, undefined);
+});
 
-  const invalidResponse = await worker.fetch(
+test("assistant route validates empty requests before contacting providers", async () => {
+  const worker = await getWorker();
+  const response = await worker.fetch(
     new Request("http://localhost/api/assistant", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -214,8 +203,8 @@ test("assistant route covers the creator workflow and validates requests", async
     executionContext,
   );
 
-  assert.equal(invalidResponse.status, 400);
-  assert.deepEqual(await invalidResponse.json(), { error: "Message is required" });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "Message is required" });
 });
 
 test("ships a complete installable PWA shell", async () => {
@@ -395,18 +384,16 @@ test("accountability ladder respects quiet hours and boss-specific pressure", as
   assert.notEqual(unhinged.key, coach.key);
 });
 
-test("idea generation honors the creator's weekly publishing target", async () => {
-  const { DEFAULT_PROFILE, generateIdeas } = await getStateModel();
-  const ideas = generateIdeas(
-    {
-      ...DEFAULT_PROFILE,
-      videosPerWeek: 6,
-      topics: ["AI news", "creator systems"],
-    },
-    [],
-  );
+test("production idea flow contains no template generator or fake scoring", async () => {
+  const [stateSource, appSource, ideaRouteSource] = await Promise.all([
+    readFile(new URL("../app/lib/mini-ceo.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/mini-ceo-app.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/ideas/route.ts", import.meta.url), "utf8"),
+  ]);
 
-  assert.equal(ideas.length, 6);
-  assert.equal(new Set(ideas.map((idea) => idea.title)).size, 6);
-  assert.ok(ideas.every((idea) => idea.goalFit >= 82));
+  assert.doesNotMatch(stateSource, /function generateIdeas|goalFit:\s*Math\.max/);
+  assert.doesNotMatch(appSource, /setTimeout\(resolve,\s*850|% goal fit|Content Skill grew/);
+  assert.match(ideaRouteSource, /process\.env\.OPENROUTER_API_KEY/);
+  assert.match(ideaRouteSource, /No template ideas were (?:generated|substituted)/);
+  assert.match(ideaRouteSource, /Generated by the live Mini CEO model/);
 });

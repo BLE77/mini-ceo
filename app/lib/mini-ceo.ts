@@ -54,7 +54,14 @@ export interface Idea {
   hook: string;
   angle: string;
   topic: string;
-  goalFit: number;
+  goalFit?: number;
+  fitReason?: string;
+  verificationNote?: string;
+  provenance?: {
+    kind: "ai-original" | "creator-input";
+    label: string;
+    detail: string;
+  };
   source: "boss" | "creator";
   status: "suggested" | "approved" | "rejected";
   skillId?: string;
@@ -240,7 +247,6 @@ export function createDemoState(now = new Date()): MiniCeoState {
       hook: "I stopped asking AI for ideas and gave it an actual job instead.",
       angle: "Show the difference between a chatbot prompt and an agent that plans, researches, and hands back a usable production brief.",
       topic: "AI tools",
-      goalFit: 96,
       source: "boss",
       status: "approved",
       skillId: "demo_skill_breakdown",
@@ -251,7 +257,6 @@ export function createDemoState(now = new Date()): MiniCeoState {
       hook: "Your content calendar is not the problem. The number of decisions inside it is.",
       angle: "Demonstrate a weekly batching system that turns five open-ended projects into one clear next action.",
       topic: "creator systems",
-      goalFit: 93,
       source: "creator",
       status: "approved",
       skillId: "demo_skill_system",
@@ -262,7 +267,6 @@ export function createDemoState(now = new Date()): MiniCeoState {
       hook: "I deleted eleven AI subscriptions. These three earned their spot.",
       angle: "Use a fast evidence-led ranking based on time saved, output quality, and how often each tool gets used.",
       topic: "AI tools",
-      goalFit: 91,
       source: "boss",
       status: "suggested",
       skillId: "demo_skill_breakdown",
@@ -273,7 +277,6 @@ export function createDemoState(now = new Date()): MiniCeoState {
       hook: "The information is good. Your first sentence is making it invisible.",
       angle: "Rewrite three weak educational openings into specific, tension-driven hooks without adding clickbait.",
       topic: "content strategy",
-      goalFit: 89,
       source: "boss",
       status: "suggested",
       skillId: "demo_skill_system",
@@ -284,7 +287,6 @@ export function createDemoState(now = new Date()): MiniCeoState {
       hook: "You probably have a month of content hiding in one unfinished note.",
       angle: "Transform a real pile of fragments into a hook, proof sequence, shot list, and publishable short.",
       topic: "creator systems",
-      goalFit: 87,
       source: "boss",
       status: "suggested",
       skillId: "demo_skill_system",
@@ -451,93 +453,6 @@ export const makeId = (prefix: string) => {
   }
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 };
-
-const topicOrFallback = (profile: CreatorProfile, index: number) =>
-  profile.topics[index % Math.max(profile.topics.length, 1)] || "your niche";
-
-export function generateIdeas(
-  profile: CreatorProfile,
-  skills: ContentSkill[],
-  count = Math.max(4, profile.videosPerWeek),
-): Idea[] {
-  const firstSkill = skills[0];
-  const goal = profile.goal || "build a consistent creator brand";
-  const templates = [
-    {
-      title: (topic: string) => `The ${topic} update everyone is explaining wrong`,
-      hook: "You are not behind. The popular explanation is missing the part that matters.",
-      angle: `Break down one timely change, correct the common take, and connect it directly to the goal: ${goal}.`,
-    },
-    {
-      title: (topic: string) => `Three ${topic} signals worth watching this week`,
-      hook: "Ignore the loudest prediction. These three signals tell a better story.",
-      angle: "A saveable rapid-fire list with one proof point and one practical takeaway per signal.",
-    },
-    {
-      title: (topic: string) => `I tried the popular ${topic} advice so you do not have to`,
-      hook: "This sounded smart until I tested it in a real workflow.",
-      angle: "Use a first-person experiment to turn a familiar claim into an original lesson.",
-    },
-    {
-      title: (topic: string) => `The beginner's shortcut to understanding ${topic}`,
-      hook: "Give me 35 seconds and this will finally make sense.",
-      angle: "Teach one confusing concept with a visual analogy and a single next action.",
-    },
-    {
-      title: (topic: string) => `What actually changed in ${topic} this week`,
-      hook: "The headline is not the useful part. Here is what changes for you.",
-      angle: "Turn a timely signal into a concise before-and-after explanation with a practical next move.",
-    },
-    {
-      title: (topic: string) => `Before you use the popular ${topic} playbook, check this`,
-      hook: "This advice works, but only if one condition is true.",
-      angle: "Add a useful constraint to familiar advice and demonstrate it with a concrete example.",
-    },
-    {
-      title: (topic: string) => `${topic}: the myth, the reality, and the move`,
-      hook: "The myth is catchy. The reality is more useful.",
-      angle: "Use a three-beat contrast that ends with one action the audience can take today.",
-    },
-  ];
-
-  const lenses = ["field test", "creator response", "practical breakdown"];
-  return Array.from({ length: Math.max(1, count) }, (_, index) => {
-    const template = templates[index % templates.length];
-    const cycle = Math.floor(index / templates.length);
-    const topic = topicOrFallback(profile, index);
-    const baseTitle = template.title(topic);
-    return {
-      id: makeId("idea"),
-      title: cycle ? `${baseTitle} — ${lenses[(cycle - 1) % lenses.length]}` : baseTitle,
-      hook: template.hook,
-      angle: template.angle,
-      topic,
-      goalFit: Math.max(82, 96 - index * 3),
-      source: "boss" as const,
-      status: "suggested" as const,
-      skillId: firstSkill?.id,
-    };
-  });
-}
-
-export function createSkill(
-  profile: CreatorProfile,
-  reference?: ReferenceAsset,
-): ContentSkill {
-  const topic = profile.topics[0] || "Creator";
-  const label = reference?.label || `${topic} signal breakdown`;
-  return {
-    id: makeId("skill"),
-    name: `${topic} - Hard Hook Breakdown`,
-    hook: `Start with a disputed claim or costly mistake tied to ${label}.`,
-    pacing: "Immediate hook, proof by second 8, practical turn by second 22",
-    tone: "Direct, informed, conversational",
-    visualFormat: "Face-to-camera with two bold evidence cutaways",
-    length: "30-45 seconds",
-    examples: reference ? 1 : 0,
-    confidence: reference ? 72 : 58,
-  };
-}
 
 const PIPELINE: Array<{
   stage: TaskStage;
@@ -842,14 +757,25 @@ export function migrateMiniCeoState(input: unknown, now = new Date()): MiniCeoSt
     typeof raw.streak === "number" ? raw.streak : 0,
     lastActiveDate,
   );
+  const ideas = (Array.isArray(raw.ideas) ? raw.ideas : []).filter(
+    (idea) =>
+      !(
+        idea.source === "boss" &&
+        idea.status === "suggested" &&
+        !idea.provenance
+      ),
+  );
+  const skills = (Array.isArray(raw.skills) ? raw.skills : []).filter((skill) =>
+    skill.id.startsWith("demo_"),
+  );
   const migrated: MiniCeoState = {
     ...base,
     ...raw,
     version: 2,
     profile,
     references: Array.isArray(raw.references) ? raw.references : [],
-    skills: Array.isArray(raw.skills) ? raw.skills : [],
-    ideas: Array.isArray(raw.ideas) ? raw.ideas : [],
+    skills,
+    ideas,
     tasks: ensureSingleActiveTask(tasks),
     achievements: Array.isArray(raw.achievements) ? raw.achievements : [],
     lastActiveDate,
